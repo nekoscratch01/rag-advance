@@ -1,0 +1,47 @@
+cases:
+  - id: smoke_001
+    question: "Atlas V0.0 的目标是什么？"
+    expected_confidence: supported
+    expected_sources:
+      - "demo_knowledge.md"
+    expected_keywords:
+      - "证据"
+      - "RAG"
+      - "trace_id"
+
+  - id: smoke_002
+    question: "V0.0 明确不做哪些事情？"
+    expected_confidence: supported
+    expected_sources:
+      - "demo_knowledge.md"
+    expected_keywords:
+      - "Research Job"
+      - "Reranker"
+      - "GraphRAG"
+
+  - id: smoke_003
+    question: "Postgres 和 Qdrant 在 V0.0 中分别承担什么职责？"
+    expected_confidence: supported
+    expected_sources:
+      - "atlas_notes.txt"
+    expected_keywords:
+      - "Postgres"
+      - "Qdrant"
+      - "向量检索"
+
+  - id: smoke_004
+    question: "Atlas 是否应该在证据不足时编造答案？"
+    expected_confidence: supported
+    expected_sources:
+      - "demo_knowledge.md"
+    expected_keywords:
+      - "证据不足"
+      - "不应该"
+
+  - id: smoke_005
+    question: "Atlas V0.0 支持 Kubernetes 自动扩容吗？"
+    expected_confidence: insufficient
+    expected_sources:
+      - "demo_knowledge.md"
+    expected_keywords:
+      - "证据不足"

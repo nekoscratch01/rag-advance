@@ -1,0 +1,35 @@
+# Local environment
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Python/cache/build output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# macOS/editor noise
+.DS_Store
+
+# Local generated corpora and raw PDFs.
+# Keep corpus/.gitkeep so the directory exists after clone.
+corpus/*
+!corpus/.gitkeep
+
+# Raw benchmark run artifacts can be regenerated and are often large.
+# Keep curated human-readable benchmark reports under benchmarks/rag_quality.
+benchmarks/financebench/
+
+# Local databases / scratch artifacts
+*.db
+*.sqlite
+*.sqlite3

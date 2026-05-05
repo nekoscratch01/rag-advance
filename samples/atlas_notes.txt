@@ -1,0 +1,8 @@
+Atlas 的第一阶段强调三件事：证据链、执行记录和可评估。
+
+证据链表示答案必须能够回到文档 chunk。执行记录表示每一次查询都要保存
+retrieved chunks、scores、model name、prompt version、latency 和 citations。
+可评估表示系统要能用固定问题反复比较检索和答案质量。
+
+V0.0 使用 Postgres 保存 documents、chunks、query_runs、retrieval_events 和
+generation_events。Qdrant 只负责向量检索，不是系统事实的唯一来源。

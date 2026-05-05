@@ -1,0 +1,251 @@
+cases:
+  - id: v0_001
+    question: "Atlas V0.0 的目标是什么？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据优先", "RAG", "内核"]
+  - id: v0_002
+    question: "V0.0 支持哪些文档格式？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["PDF", "Markdown", "TXT"]
+  - id: v0_003
+    question: "V0.0 使用什么本地模型生成 embeddings？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["BGE", "embedding"]
+  - id: v0_004
+    question: "V0.0 把文本元数据写到哪里？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["Postgres"]
+  - id: v0_005
+    question: "V0.0 把向量写到哪里？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["Qdrant"]
+  - id: v0_006
+    question: "用户查询时系统先做什么？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["检索", "chunks"]
+  - id: v0_007
+    question: "V0.0 的答案必须带什么？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["citation", "trace_id"]
+  - id: v0_008
+    question: "trace_id 的作用是什么？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["复查", "回答"]
+  - id: v0_009
+    question: "证据不足时 Atlas 应该怎么做？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足", "不应该"]
+  - id: v0_010
+    question: "V0.0 是否承诺 claim-level citation？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["不承诺", "chunk-level"]
+  - id: v0_011
+    question: "V0.0 支持 PDF 解析吗？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["PDF", "页"]
+  - id: v0_012
+    question: "V0.0 做不做前端？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["前端", "不做"]
+  - id: v0_013
+    question: "V0.0 做不做 Hybrid Retrieval？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["Hybrid Retrieval", "不做"]
+  - id: v0_014
+    question: "V0.0 做不做 Reranker？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["Reranker", "不做"]
+  - id: v0_015
+    question: "V0.0 做不做 Research Job？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["Research Job", "不做"]
+  - id: v0_016
+    question: "V0.0 做不做 GraphRAG？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["GraphRAG", "不做"]
+  - id: v0_017
+    question: "Atlas 第一阶段强调哪三件事？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["证据链", "执行记录", "可评估"]
+  - id: v0_018
+    question: "证据链是什么意思？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["答案", "文档 chunk"]
+  - id: v0_019
+    question: "执行记录需要保存哪些信息？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["retrieved chunks", "scores", "latency"]
+  - id: v0_020
+    question: "可评估是什么意思？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["固定问题", "比较"]
+  - id: v0_021
+    question: "V0.0 使用 Postgres 保存哪些表？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["documents", "chunks", "query_runs"]
+  - id: v0_022
+    question: "Qdrant 是系统事实的唯一来源吗？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["不是", "向量检索"]
+  - id: v0_023
+    question: "Postgres 和 Qdrant 在 V0.0 中分别承担什么职责？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["Postgres", "Qdrant", "向量检索"]
+  - id: v0_024
+    question: "V0.0 的检索单位是什么？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["chunk"]
+  - id: v0_025
+    question: "V0.0 如何帮助工程师复查回答？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md", "atlas_notes.txt"]
+    expected_keywords: ["trace_id", "执行记录"]
+  - id: v0_026
+    question: "Atlas V0.0 是否应该自由发挥 evidence 外的信息？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足", "不应该"]
+  - id: v0_027
+    question: "V0.0 的 citation 粒度是什么？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["chunk-level"]
+  - id: v0_028
+    question: "V0.0 中 gpt-5-nano 的作用是什么？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["生成答案"]
+  - id: v0_029
+    question: "V0.0 中 BGE 的作用是什么？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["embeddings"]
+  - id: v0_030
+    question: "V0.0 是否会把向量保存在 Postgres 里？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md", "atlas_notes.txt"]
+    expected_keywords: ["Qdrant", "向量"]
+  - id: v0_031
+    question: "Atlas V0.0 支持 Kubernetes 自动扩容吗？"
+    expected_confidence: insufficient
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足"]
+  - id: v0_032
+    question: "Atlas V0.0 支持用户权限系统吗？"
+    expected_confidence: insufficient
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足"]
+  - id: v0_033
+    question: "Atlas V0.0 支持 Kafka 吗？"
+    expected_confidence: insufficient
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足"]
+  - id: v0_034
+    question: "Atlas V0.0 支持 Neo4j 吗？"
+    expected_confidence: insufficient
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足"]
+  - id: v0_035
+    question: "Atlas V0.0 支持 ClickHouse 吗？"
+    expected_confidence: insufficient
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足"]
+  - id: v0_036
+    question: "Atlas V0.0 支持长期记忆吗？"
+    expected_confidence: insufficient
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足"]
+  - id: v0_037
+    question: "Atlas V0.0 是否支持 MCP 工具层？"
+    expected_confidence: insufficient
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足"]
+  - id: v0_038
+    question: "Atlas V0.0 是否支持流式写入？"
+    expected_confidence: insufficient
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足"]
+  - id: v0_039
+    question: "Atlas V0.0 是否支持复杂异步研究任务？"
+    expected_confidence: insufficient
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足"]
+  - id: v0_040
+    question: "Atlas V0.0 是否支持表格 SQL 分析？"
+    expected_confidence: insufficient
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["证据不足"]
+  - id: v0_041
+    question: "导入文档后系统会生成什么？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["chunks", "embeddings"]
+  - id: v0_042
+    question: "系统为什么需要 citations？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["复查", "回答"]
+  - id: v0_043
+    question: "系统为什么需要保存 scores？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["执行记录", "scores"]
+  - id: v0_044
+    question: "系统为什么需要保存 prompt version？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["执行记录", "prompt version"]
+  - id: v0_045
+    question: "系统为什么需要保存 latency？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["执行记录", "latency"]
+  - id: v0_046
+    question: "V0.0 的回答生成前需要先检索什么？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["chunks", "evidence"]
+  - id: v0_047
+    question: "V0.0 中 selected evidence 交给谁生成答案？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md"]
+    expected_keywords: ["gpt-5-nano"]
+  - id: v0_048
+    question: "Atlas 第一阶段如何比较检索和答案质量？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["固定问题", "比较"]
+  - id: v0_049
+    question: "V0.0 是否把 Qdrant 当作权威文本库？"
+    expected_confidence: supported
+    expected_sources: ["atlas_notes.txt"]
+    expected_keywords: ["不是", "唯一来源"]
+  - id: v0_050
+    question: "V0.0 最重要的可靠性原则是什么？"
+    expected_confidence: supported
+    expected_sources: ["demo_knowledge.md", "atlas_notes.txt"]
+    expected_keywords: ["证据", "回答"]
