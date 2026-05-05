@@ -28,3 +28,15 @@ class Candidate:
     metadata: dict[str, Any] = field(default_factory=dict)
     source_uri: str | None = None
     section_title: str | None = None
+    parent_id: str | None = None
+    candidate_id: str | None = None
+    provider: str = "text_hybrid"
+    source_type: str = "text_chunk"
+    lane: str | None = None
+    retrieval_task_id: str | None = None
+    retrieval_unit_id: str | None = None
+    unit_weight: float = 1.0
+    lane_weight: float = 1.0
+    lane_rank: int | None = None
+    lane_score: float | None = None
+    weighted_contribution: float | None = None
