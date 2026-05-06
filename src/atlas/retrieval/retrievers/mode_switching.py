@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.evidence import Evidence
 
 
 class ModeSwitchingRetriever:

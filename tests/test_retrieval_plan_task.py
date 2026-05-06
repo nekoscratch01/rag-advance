@@ -5,8 +5,8 @@ from atlas.main import create_app
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
 from atlas.query_runtime.cache import make_cache_key
 from atlas.query_runtime.service import _retrieve_evidence
-from atlas.retrieval.evidence import Evidence
-from atlas.retrieval.retrieval_task import tasks_from_plan
+from atlas.retrieval.models.evidence import Evidence
+from atlas.retrieval.models.retrieval_task import tasks_from_plan
 
 
 class _PlanAwareRetriever:

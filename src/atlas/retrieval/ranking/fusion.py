@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any, Sequence
 
-from atlas.retrieval.candidate import Candidate
+from atlas.retrieval.models.candidate import Candidate
 
 DEFAULT_RRF_K = 60
 

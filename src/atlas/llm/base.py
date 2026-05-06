@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.evidence import Evidence
 
 
 @dataclass(frozen=True)

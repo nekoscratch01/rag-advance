@@ -3,9 +3,9 @@ from pydantic import ValidationError
 
 from atlas.query_orchestrator.schema import Entity, Metric, Period, QueryPlan, RetrievalUnit
 from atlas.query_runtime.verification import VerificationResult
-from atlas.retrieval.candidate import Candidate
-from atlas.retrieval.evidence_contract import EvidenceBlock, EvidencePack
-from atlas.retrieval.retrieval_task import serialize_retrieval_task, tasks_from_plan
+from atlas.retrieval.models.candidate import Candidate
+from atlas.retrieval.models.evidence_contract import EvidenceBlock, EvidencePack
+from atlas.retrieval.models.retrieval_task import serialize_retrieval_task, tasks_from_plan
 
 
 def test_query_plan_compiles_to_retrieval_tasks() -> None:

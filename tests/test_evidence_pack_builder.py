@@ -6,7 +6,7 @@ from atlas.query_runtime.evidence_builder import (
     build_evidence_pack_from_candidates,
     evidence_pack_to_evidence,
 )
-from atlas.retrieval.candidate import Candidate
+from atlas.retrieval.models.candidate import Candidate
 
 
 def _candidate(

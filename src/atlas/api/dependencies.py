@@ -8,11 +8,11 @@ from atlas.eval.service import EvalService
 from atlas.llm.openai_client import OpenAIAnswerGenerator
 from atlas.query_orchestrator.service import QueryOrchestrator
 from atlas.query_runtime.service import QueryRuntime
-from atlas.retrieval.bm25_retriever import BM25Retriever
-from atlas.retrieval.dense_retriever import DenseRetriever
-from atlas.retrieval.hybrid_retriever import HybridRetriever
+from atlas.retrieval.retrievers.bm25 import BM25Retriever
+from atlas.retrieval.retrievers.dense import DenseRetriever
+from atlas.retrieval.retrievers.hybrid import HybridRetriever
 from atlas.retrieval.providers.text_hybrid import TextHybridProvider
-from atlas.retrieval.reranker import CrossEncoderReranker
+from atlas.retrieval.ranking.reranker import CrossEncoderReranker
 from atlas.vector.qdrant_client import get_qdrant_client
 
 

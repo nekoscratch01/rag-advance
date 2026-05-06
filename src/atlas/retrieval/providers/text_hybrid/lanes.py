@@ -5,8 +5,8 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-from atlas.retrieval.candidate import Candidate
-from atlas.retrieval.retrieval_task import RetrievalTask
+from atlas.retrieval.models.candidate import Candidate
+from atlas.retrieval.models.retrieval_task import RetrievalTask
 
 
 TEXT_HYBRID_PROVIDER = "text_hybrid"

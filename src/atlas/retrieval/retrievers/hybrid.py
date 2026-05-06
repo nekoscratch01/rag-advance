@@ -5,10 +5,10 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from atlas.db import repositories
-from atlas.retrieval.candidate import Candidate
-from atlas.retrieval.evidence import Evidence
-from atlas.retrieval.fusion import DEFAULT_RRF_K, rrf_fuse
-from atlas.retrieval.reranker import Reranker, rerank_with_context
+from atlas.retrieval.models.candidate import Candidate
+from atlas.retrieval.models.evidence import Evidence
+from atlas.retrieval.ranking.fusion import DEFAULT_RRF_K, rrf_fuse
+from atlas.retrieval.ranking.reranker import Reranker, rerank_with_context
 
 
 class CandidateRetriever(Protocol):

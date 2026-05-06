@@ -6,9 +6,9 @@ from typing import Any
 
 from atlas.core.ids import new_id
 from atlas.ingestion.chunker import approx_token_count
-from atlas.retrieval.candidate import Candidate
-from atlas.retrieval.evidence import Evidence
-from atlas.retrieval.evidence_contract import (
+from atlas.retrieval.models.candidate import Candidate
+from atlas.retrieval.models.evidence import Evidence
+from atlas.retrieval.models.evidence_contract import (
     EvidenceBlock as ContractEvidenceBlock,
     EvidencePack,
 )

@@ -11,7 +11,7 @@ from atlas.query_orchestrator.schema import serialize_query_plan
 from atlas.query_orchestrator.service import QueryOrchestrator
 from atlas.query_runtime.service import QueryRuntime, _retrieve_evidence
 from atlas.query_runtime.trace_logger import get_query_trace_metadata
-from atlas.retrieval.retrieval_task import serialize_retrieval_task, tasks_from_plan
+from atlas.retrieval.models.retrieval_task import serialize_retrieval_task, tasks_from_plan
 
 router = APIRouter(prefix="/query", tags=["query"])
 retrieve_router = APIRouter(prefix="/retrieve", tags=["retrieval"])

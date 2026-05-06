@@ -5,7 +5,7 @@ from atlas.core.config import Settings
 from atlas.core.ids import new_id
 from atlas.db.models import GenerationEvent, QueryRun, RetrievalEvent
 from atlas.llm.base import GeneratedAnswer
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.evidence import Evidence
 
 _TRACE_METADATA_LIMIT = 2048
 _TRACE_METADATA_BY_QUERY_ID: dict[str, dict[str, Any]] = {}

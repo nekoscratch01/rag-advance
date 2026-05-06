@@ -6,10 +6,10 @@ from atlas.core.config import Settings
 from atlas.llm.base import GeneratedAnswer, LLMUsage
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
 from atlas.query_runtime.service import QueryRuntime
-from atlas.retrieval.candidate import Candidate
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.candidate import Candidate
+from atlas.retrieval.models.evidence import Evidence
 from atlas.retrieval.providers.text_hybrid import TextHybridProvider
-from atlas.retrieval.retrieval_task import tasks_from_plan
+from atlas.retrieval.models.retrieval_task import tasks_from_plan
 
 
 class _CandidateRetriever:

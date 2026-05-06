@@ -1,7 +1,7 @@
 from qdrant_client import models
 
-from atlas.retrieval.bm25_retriever import _build_filter as build_bm25_filter
-from atlas.retrieval.dense_retriever import _build_filter as build_dense_filter
+from atlas.retrieval.retrievers.bm25 import _build_filter as build_bm25_filter
+from atlas.retrieval.retrievers.dense import _build_filter as build_dense_filter
 
 
 def _must_conditions(qdrant_filter):

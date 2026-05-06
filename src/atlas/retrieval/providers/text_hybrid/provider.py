@@ -12,11 +12,11 @@ from atlas.query_runtime.evidence_builder import (
     build_evidence_pack_from_candidates,
     evidence_pack_to_evidence,
 )
-from atlas.retrieval.candidate import Candidate
-from atlas.retrieval.evidence import Evidence
-from atlas.retrieval.fusion import DEFAULT_RRF_K, WeightedRRFInput, weighted_rrf_fuse
-from atlas.retrieval.hybrid_retriever import HybridRetriever
-from atlas.retrieval.mode_switching import ModeSwitchingRetriever
+from atlas.retrieval.models.candidate import Candidate
+from atlas.retrieval.models.evidence import Evidence
+from atlas.retrieval.ranking.fusion import DEFAULT_RRF_K, WeightedRRFInput, weighted_rrf_fuse
+from atlas.retrieval.retrievers.hybrid import HybridRetriever
+from atlas.retrieval.retrievers.mode_switching import ModeSwitchingRetriever
 from atlas.retrieval.providers.text_hybrid.lanes import (
     SPARSE_BOOST_REPEAT,
     SUPPORTED_LANES,
@@ -25,8 +25,8 @@ from atlas.retrieval.providers.text_hybrid.lanes import (
     lane_filters,
     lane_query_text,
 )
-from atlas.retrieval.reranker import Reranker, rerank_with_context
-from atlas.retrieval.retrieval_task import RetrievalTask
+from atlas.retrieval.ranking.reranker import Reranker, rerank_with_context
+from atlas.retrieval.models.retrieval_task import RetrievalTask
 
 
 FUSION_BACKEND = "weighted_rrf"

@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from atlas.core.config import Settings
 from atlas.core.errors import AtlasError, ErrorCode
 from atlas.db import repositories
-from atlas.retrieval.candidate import Candidate
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.candidate import Candidate
+from atlas.retrieval.models.evidence import Evidence
 
 
 class BM25Retriever:

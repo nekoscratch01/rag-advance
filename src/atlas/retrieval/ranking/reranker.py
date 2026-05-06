@@ -6,8 +6,8 @@ import time
 from typing import Any, Protocol, Sequence
 
 from atlas.query_orchestrator.schema import QueryPlan
-from atlas.retrieval.candidate import Candidate
-from atlas.retrieval.retrieval_task import RetrievalTask
+from atlas.retrieval.models.candidate import Candidate
+from atlas.retrieval.models.retrieval_task import RetrievalTask
 
 
 class Reranker(Protocol):

@@ -1,6 +1,6 @@
 import json
 
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.evidence import Evidence
 
 
 ANSWER_INSTRUCTIONS = """你是 Atlas V0.0 的证据优先回答生成器。

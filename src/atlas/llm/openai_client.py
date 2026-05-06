@@ -9,7 +9,7 @@ from atlas.core.config import Settings
 from atlas.core.errors import AtlasError, ErrorCode
 from atlas.llm.base import GeneratedAnswer, LLMUsage
 from atlas.llm.prompts import ANSWER_INSTRUCTIONS, build_answer_input
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.evidence import Evidence
 
 
 class OpenAIAnswerGenerator:

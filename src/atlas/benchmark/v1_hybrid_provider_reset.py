@@ -12,8 +12,8 @@ from statistics import mean
 from typing import Any
 
 from atlas.query_orchestrator.ontology import FinanceMetricOntology
-from atlas.retrieval.candidate import Candidate
-from atlas.retrieval.fusion import DEFAULT_RRF_K, WeightedRRFInput, weighted_rrf_fuse
+from atlas.retrieval.models.candidate import Candidate
+from atlas.retrieval.ranking.fusion import DEFAULT_RRF_K, WeightedRRFInput, weighted_rrf_fuse
 
 
 DEFAULT_REPORT_DIR = Path("benchmarks/rag_quality/v1_hybrid_provider_reset/smoke_runs")

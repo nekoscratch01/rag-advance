@@ -3,7 +3,7 @@ from __future__ import annotations
 from atlas.query_runtime.citation_verifier import verify_citations
 from atlas.query_runtime.critic_lite import post_generation_critic, pre_generation_critic
 from atlas.query_runtime.evidence_evaluator import evaluate_evidence
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.evidence import Evidence
 
 
 def _evidence(

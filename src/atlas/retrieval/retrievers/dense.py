@@ -5,8 +5,8 @@ from atlas.core.config import Settings, bm25_sparse_enabled
 from atlas.core.errors import AtlasError, ErrorCode
 from atlas.db import repositories
 from atlas.embeddings.base import Embedder
-from atlas.retrieval.candidate import Candidate
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.candidate import Candidate
+from atlas.retrieval.models.evidence import Evidence
 
 
 class DenseRetriever:

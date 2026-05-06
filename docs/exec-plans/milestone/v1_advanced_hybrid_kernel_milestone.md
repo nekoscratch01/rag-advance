@@ -53,11 +53,11 @@ User Query
 src/atlas/query_orchestrator/schema.py
 src/atlas/query_orchestrator/service.py
 src/atlas/query_orchestrator/fallback.py
-src/atlas/query_orchestrator/llm.py
-src/atlas/query_orchestrator/validators.py
-src/atlas/retrieval/retrieval_task.py
-src/atlas/retrieval/candidate.py
-src/atlas/retrieval/evidence_contract.py
+src/atlas/query_orchestrator/llm_planner.py
+src/atlas/query_orchestrator/validator.py
+src/atlas/retrieval/models/retrieval_task.py
+src/atlas/retrieval/models/candidate.py
+src/atlas/retrieval/models/evidence_contract.py
 src/atlas/query_runtime/verification.py
 configs/finance_metric_ontology.yaml
 ```
@@ -67,8 +67,8 @@ configs/finance_metric_ontology.yaml
 ```text
 src/atlas/retrieval/providers/text_hybrid/provider.py
 src/atlas/retrieval/providers/text_hybrid/lanes.py
-src/atlas/retrieval/fusion.py
-src/atlas/retrieval/reranker.py
+src/atlas/retrieval/ranking/fusion.py
+src/atlas/retrieval/ranking/reranker.py
 ```
 
 ### Evidence / Verification / Runtime

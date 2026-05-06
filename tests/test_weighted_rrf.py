@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from atlas.retrieval.candidate import Candidate
-from atlas.retrieval.fusion import WeightedRRFInput, rrf_fuse, weighted_rrf_fuse
+from atlas.retrieval.models.candidate import Candidate
+from atlas.retrieval.ranking.fusion import WeightedRRFInput, rrf_fuse, weighted_rrf_fuse
 
 
 def _candidate(

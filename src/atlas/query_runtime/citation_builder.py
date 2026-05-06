@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.evidence import Evidence
 
 
 def build_citations(answer: str, evidence: list[Evidence], *, confidence: str) -> list[dict[str, Any]]:

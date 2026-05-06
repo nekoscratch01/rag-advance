@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import replace
 
 from atlas.query_orchestrator.schema import Entity, Metric, Period, QueryPlan, RetrievalUnit
-from atlas.retrieval.candidate import Candidate
+from atlas.retrieval.models.candidate import Candidate
 from atlas.retrieval.providers.text_hybrid import TextHybridProvider
-from atlas.retrieval.reranker import CrossEncoderReranker, rerank_with_context
-from atlas.retrieval.retrieval_task import tasks_from_plan
+from atlas.retrieval.ranking.reranker import CrossEncoderReranker, rerank_with_context
+from atlas.retrieval.models.retrieval_task import tasks_from_plan
 
 
 class _FakeCrossEncoder:

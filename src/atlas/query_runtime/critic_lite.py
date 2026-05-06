@@ -8,7 +8,7 @@ from typing import Any, Iterable
 
 from atlas.query_runtime.citation_verifier import verify_citations
 from atlas.query_runtime.evidence_evaluator import evaluate_evidence
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.evidence import Evidence
 
 
 @dataclass(frozen=True)

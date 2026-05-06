@@ -3,7 +3,7 @@ from __future__ import annotations
 from atlas.core.ids import new_id
 from atlas.query_runtime import critic_lite
 from atlas.query_runtime.verification import VerificationResult
-from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.models.evidence import Evidence
 
 
 def evaluate_evidence(query: str, evidence: list[Evidence]) -> VerificationResult:

@@ -26,8 +26,8 @@ from atlas.query_runtime.trace_logger import (
     make_retrieval_events,
     record_query_trace_metadata,
 )
-from atlas.retrieval.evidence import Evidence
-from atlas.retrieval.retrieval_task import (
+from atlas.retrieval.models.evidence import Evidence
+from atlas.retrieval.models.retrieval_task import (
     RetrievalTask,
     serialize_retrieval_task,
     tasks_from_plan,

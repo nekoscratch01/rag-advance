@@ -9,8 +9,8 @@ from atlas.db.repositories import record_v1_trace_family
 from atlas.db.session import get_db
 from atlas.main import create_app
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
-from atlas.retrieval.evidence import Evidence
-from atlas.retrieval.retrieval_task import tasks_from_plan
+from atlas.retrieval.models.evidence import Evidence
+from atlas.retrieval.models.retrieval_task import tasks_from_plan
 
 
 class _FakeDB:
