@@ -6,6 +6,7 @@ from atlas.embeddings.bge_local import LocalBGEEmbedder
 from atlas.ingestion.service import IngestionService
 from atlas.eval.service import EvalService
 from atlas.llm.openai_client import OpenAIAnswerGenerator
+from atlas.query_orchestrator.service import QueryOrchestrator
 from atlas.query_runtime.service import QueryRuntime
 from atlas.retrieval.bm25_retriever import BM25Retriever
 from atlas.retrieval.dense_retriever import DenseRetriever
@@ -109,12 +110,18 @@ def get_answer_generator() -> OpenAIAnswerGenerator:
 
 
 @lru_cache
+def get_query_orchestrator() -> QueryOrchestrator:
+    return QueryOrchestrator(settings=get_settings())
+
+
+@lru_cache
 def get_query_runtime() -> QueryRuntime:
     settings = get_settings()
     return QueryRuntime(
         settings=settings,
         retriever=get_retriever(),
         generator=get_answer_generator(),
+        orchestrator=get_query_orchestrator(),
     )
 
 

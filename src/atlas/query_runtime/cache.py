@@ -36,6 +36,7 @@ def make_cache_key(
             explicit_retrieval_mode=explicit_retrieval_mode,
             top_k=top_k,
         ),
+        "query_plan": _query_plan_cache_config(settings, merged_options),
         "reranker": _reranker_cache_config(settings, merged_options, top_k),
         "evidence": _evidence_cache_config(settings, merged_options),
         "critic": _critic_cache_config(settings, merged_options),
@@ -222,6 +223,76 @@ def _reranker_cache_config(
     }
 
 
+def _query_plan_cache_config(settings: Settings, options: Mapping[str, Any]) -> dict[str, Any]:
+    query_plan = _mapping_option(options, "query_plan")
+    retrieval_tasks = options.get("retrieval_tasks")
+    stable_plan = _stable_plan_payload(query_plan) if query_plan else None
+    stable_tasks = _stable_tasks_payload(retrieval_tasks) if retrieval_tasks else None
+    return {
+        "enabled": query_plan != {},
+        "planner_version": _option(
+            options,
+            "query_planner_version",
+            default=_setting(settings, "query_planner_version", None),
+        ),
+        "planner_model": _option(
+            options,
+            "query_planner_model",
+            default=_setting(settings, "query_planner_model", None),
+        ),
+        "plan_hash": _hash_payload(stable_plan) if stable_plan else None,
+        "tasks_hash": _hash_payload(stable_tasks) if stable_tasks else None,
+    }
+
+
+def _stable_plan_payload(query_plan: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: query_plan.get(key)
+        for key in (
+            "original_query",
+            "standalone_query",
+            "query_type",
+            "entities",
+            "periods",
+            "metrics",
+            "filters",
+            "retrieval_units",
+            "risk_flags",
+            "budget",
+            "planner",
+            "planner_version",
+            "validation_status",
+        )
+    }
+
+
+def _stable_tasks_payload(value: Any) -> list[Any]:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
+        return []
+    stable = []
+    for task in value:
+        if not isinstance(task, Mapping):
+            continue
+        stable.append(
+            {
+                key: task.get(key)
+                for key in (
+                    "unit_id",
+                    "query_text",
+                    "lanes",
+                    "filters",
+                    "must_have_terms",
+                    "should_terms",
+                    "top_k",
+                    "weight",
+                    "lane_weights",
+                    "metadata",
+                )
+            }
+        )
+    return stable
+
+
 def _evidence_cache_config(settings: Settings, options: Mapping[str, Any]) -> dict[str, Any]:
     nested = _mapping_option(options, "evidence", "evidence_config")
     return {
@@ -355,6 +426,10 @@ def _stable_json(value: Any) -> str:
         separators=(",", ":"),
         sort_keys=True,
     )
+
+
+def _hash_payload(value: Any) -> str:
+    return hashlib.sha256(_stable_json(value).encode("utf-8")).hexdigest()
 
 
 def _canonicalize(value: Any) -> Any:

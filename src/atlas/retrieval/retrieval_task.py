@@ -48,3 +48,20 @@ class RetrievalTask:
 
 def tasks_from_plan(plan: QueryPlan) -> list[RetrievalTask]:
     return [RetrievalTask.from_unit(plan, unit) for unit in plan.retrieval_units]
+
+
+def serialize_retrieval_task(task: RetrievalTask) -> dict[str, Any]:
+    return {
+        "task_id": task.task_id,
+        "plan_id": task.plan_id,
+        "unit_id": task.unit_id,
+        "query_text": task.query_text,
+        "lanes": list(task.lanes),
+        "filters": dict(task.filters),
+        "must_have_terms": list(task.must_have_terms),
+        "should_terms": list(task.should_terms),
+        "top_k": task.top_k,
+        "weight": task.weight,
+        "lane_weights": dict(task.lane_weights),
+        "metadata": dict(task.metadata),
+    }

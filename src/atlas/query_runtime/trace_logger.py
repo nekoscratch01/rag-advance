@@ -99,6 +99,17 @@ def record_query_trace_metadata(
             "cache_latency_ms": cache_latency_ms,
         },
         "stages": [
+            *(
+                [
+                    {
+                        "name": "planning",
+                        "status": "completed",
+                        "latency_ms": metadata.get("plan_latency_ms"),
+                    }
+                ]
+                if isinstance(metadata, dict) and metadata.get("plan_latency_ms") is not None
+                else []
+            ),
             {
                 "name": "cache",
                 "status": cache_status,

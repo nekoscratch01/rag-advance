@@ -4,11 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from atlas.api.dependencies import get_query_runtime
+from atlas.api.dependencies import get_query_orchestrator, get_query_runtime
 from atlas.db.repositories import get_chunks_by_ids, get_query_run
 from atlas.db.session import get_db
+from atlas.query_orchestrator.schema import serialize_query_plan
+from atlas.query_orchestrator.service import QueryOrchestrator
 from atlas.query_runtime.service import QueryRuntime
 from atlas.query_runtime.trace_logger import get_query_trace_metadata
+from atlas.retrieval.retrieval_task import serialize_retrieval_task, tasks_from_plan
 
 router = APIRouter(prefix="/query", tags=["query"])
 
@@ -18,6 +21,20 @@ class QueryRequest(BaseModel):
     top_k: int | None = Field(default=None, ge=1)
     filters: dict[str, Any] = Field(default_factory=dict)
     options: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/plan")
+def plan_query(
+    request: QueryRequest,
+    orchestrator: QueryOrchestrator = Depends(get_query_orchestrator),
+) -> dict[str, Any]:
+    use_llm = not _truthy(request.options.get("query_plan_fallback_only"))
+    plan = orchestrator.plan(request.query, use_llm=use_llm)
+    tasks = tasks_from_plan(plan)
+    return {
+        "query_plan": serialize_query_plan(plan),
+        "retrieval_tasks": [serialize_retrieval_task(task) for task in tasks],
+    }
 
 
 @router.post("")
@@ -39,6 +56,7 @@ def run_query(
         "answer": result.answer,
         "confidence": result.confidence,
         "citations": result.citations,
+        "details": result.details if request.options.get("return_trace") else {},
     }
 
 
@@ -246,6 +264,14 @@ def _trace_stages(trace_metadata, retrieval_events, generation_events) -> list[d
 def _trace_route_metadata(trace_metadata: dict[str, Any]) -> dict[str, Any]:
     metadata = trace_metadata.get("metadata")
     return dict(metadata) if isinstance(metadata, dict) else {}
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on", "enabled", "enable"}
 
 
 def _stage_latency(trace_metadata: dict[str, Any], stage_name: str) -> int | None:

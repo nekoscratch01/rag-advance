@@ -124,3 +124,7 @@ class QueryPlan(_StrictModel):
     @property
     def retrieval_texts(self) -> tuple[str, ...]:
         return tuple(unit.text for unit in self.retrieval_units)
+
+
+def serialize_query_plan(plan: QueryPlan) -> dict[str, Any]:
+    return plan.model_dump(mode="json")

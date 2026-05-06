@@ -10,6 +10,8 @@ from atlas.core.ids import new_id
 from atlas.db import repositories
 from atlas.ingestion.chunker import approx_token_count
 from atlas.llm.base import AnswerGenerator
+from atlas.query_orchestrator.schema import QueryPlan, serialize_query_plan
+from atlas.query_orchestrator.service import QueryOrchestrator
 from atlas.query_runtime.cache import CACHE_KEY_SCHEMA, QueryCacheStore, make_cache_key
 from atlas.query_runtime.citation_builder import build_citations
 from atlas.query_runtime.critic_lite import (
@@ -25,6 +27,11 @@ from atlas.query_runtime.trace_logger import (
     record_query_trace_metadata,
 )
 from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.retrieval_task import (
+    RetrievalTask,
+    serialize_retrieval_task,
+    tasks_from_plan,
+)
 
 
 @dataclass(frozen=True)
@@ -56,10 +63,12 @@ class QueryRuntime:
         settings: Settings,
         retriever: Retriever,
         generator: AnswerGenerator,
+        orchestrator: QueryOrchestrator | None = None,
     ) -> None:
         self.settings = settings
         self.retriever = retriever
         self.generator = generator
+        self.orchestrator = orchestrator
 
     def run(
         self,
@@ -81,8 +90,21 @@ class QueryRuntime:
                 status_code=400,
             )
         requested_top_k = top_k if top_k is not None else _int_option(runtime_options, "top_k")
-        effective_top_k = min(requested_top_k or self.settings.default_top_k, self.settings.max_top_k)
+        effective_top_k = min(
+            requested_top_k or self.settings.default_top_k,
+            self.settings.max_top_k,
+        )
         started = time.perf_counter()
+        query_plan, retrieval_tasks, plan_latency_ms = _plan_query(
+            self.orchestrator,
+            normalized_query,
+            runtime_options,
+        )
+        if query_plan is not None:
+            runtime_options["query_plan"] = serialize_query_plan(query_plan)
+            runtime_options["retrieval_tasks"] = [
+                serialize_retrieval_task(task) for task in retrieval_tasks
+            ]
         cache_started = time.perf_counter()
         cache_policy = _cache_policy(self.settings, runtime_options)
         cache_key = _cache_key(
@@ -117,6 +139,9 @@ class QueryRuntime:
                     settings=self.settings,
                     options=runtime_options,
                     effective_top_k=effective_top_k,
+                    query_plan=query_plan,
+                    retrieval_tasks=retrieval_tasks,
+                    plan_latency_ms=plan_latency_ms,
                 )
                 query_run = make_query_run(
                     query_id=query_id,
@@ -132,7 +157,12 @@ class QueryRuntime:
                 _attach_query_details(query_run, {})
                 repositories.add_query_trace(db, query_run, [], None)
                 db.commit()
-                return QueryResult(query_id, trace_id, answer, confidence, citations)
+                details = _runtime_details(
+                    query_plan=query_plan,
+                    retrieval_tasks=retrieval_tasks,
+                    plan_latency_ms=plan_latency_ms,
+                )
+                return QueryResult(query_id, trace_id, answer, confidence, citations, details)
             cache_status = "miss"
 
         retrieval_events = []
@@ -146,6 +176,8 @@ class QueryRuntime:
                 top_k=effective_top_k,
                 filters=filters,
                 options=runtime_options,
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
             )
             retrieval_latency_ms = int((time.perf_counter() - retrieval_started) * 1000)
             retrieval_events = make_retrieval_events(query_id=query_id, evidence=evidence)
@@ -166,6 +198,9 @@ class QueryRuntime:
                 settings=self.settings,
                 options=runtime_options,
                 effective_top_k=effective_top_k,
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
             )
             query_run = make_query_run(
                 query_id=query_id,
@@ -207,6 +242,9 @@ class QueryRuntime:
                 settings=self.settings,
                 options=runtime_options,
                 effective_top_k=effective_top_k,
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
             )
             query_run = make_query_run(
                 query_id=query_id,
@@ -229,7 +267,12 @@ class QueryRuntime:
             answer = "当前导入的文档中没有检索到足够证据回答这个问题。"
             citations: list[dict] = []
             pre_critic = pre_generation_critic(normalized_query, [])
-            details = _critic_details(pre_critic=pre_critic, post_critic=None)
+            details = _runtime_details(
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
+                extra=_critic_details(pre_critic=pre_critic, post_critic=None),
+            )
             _record_trace_metadata(
                 query_id=query_id,
                 cache_hit=False,
@@ -243,6 +286,9 @@ class QueryRuntime:
                 settings=self.settings,
                 options=runtime_options,
                 effective_top_k=effective_top_k,
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
             )
             query_run = make_query_run(
                 query_id=query_id,
@@ -275,7 +321,12 @@ class QueryRuntime:
             answer = "当前导入的文档中没有检索到足够证据回答这个问题。"
             citations = []
             confidence = _critic_confidence("insufficient", pre_critic.confidence_override, None)
-            details = _critic_details(pre_critic=pre_critic, post_critic=None)
+            details = _runtime_details(
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
+                extra=_critic_details(pre_critic=pre_critic, post_critic=None),
+            )
             _record_trace_metadata(
                 query_id=query_id,
                 cache_hit=False,
@@ -289,6 +340,9 @@ class QueryRuntime:
                 settings=self.settings,
                 options=runtime_options,
                 effective_top_k=effective_top_k,
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
             )
             query_run = make_query_run(
                 query_id=query_id,
@@ -307,7 +361,10 @@ class QueryRuntime:
             return QueryResult(query_id, trace_id, answer, confidence, citations, details)
 
         try:
-            generated = self.generator.generate(query=normalized_query, evidence=generation_evidence)
+            generated = self.generator.generate(
+                query=normalized_query,
+                evidence=generation_evidence,
+            )
             generation_latency_ms = int((time.perf_counter() - generation_started) * 1000)
             citations = build_citations(
                 generated.answer,
@@ -321,7 +378,12 @@ class QueryRuntime:
                 generation_evidence,
                 citations,
             )
-            details = _critic_details(pre_critic=pre_critic, post_critic=post_critic)
+            details = _runtime_details(
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
+                extra=_critic_details(pre_critic=pre_critic, post_critic=post_critic),
+            )
             confidence = _critic_confidence(
                 generated.confidence,
                 pre_critic.confidence_override,
@@ -341,6 +403,9 @@ class QueryRuntime:
                 settings=self.settings,
                 options=runtime_options,
                 effective_top_k=effective_top_k,
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
             )
             query_run = make_query_run(
                 query_id=query_id,
@@ -403,6 +468,9 @@ class QueryRuntime:
                 settings=self.settings,
                 options=runtime_options,
                 effective_top_k=effective_top_k,
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
             )
             query_run = make_query_run(
                 query_id=query_id,
@@ -461,7 +529,20 @@ def _retrieve_evidence(
     top_k: int,
     filters: dict | None,
     options: dict,
+    query_plan: QueryPlan | None = None,
+    retrieval_tasks: list[RetrievalTask] | None = None,
 ) -> list[Evidence]:
+    retrieve_with_plan = getattr(retriever, "retrieve_with_plan", None)
+    if callable(retrieve_with_plan) and query_plan is not None:
+        return retrieve_with_plan(
+            db,
+            query=query,
+            top_k=top_k,
+            filters=filters,
+            options=options,
+            query_plan=query_plan,
+            retrieval_tasks=retrieval_tasks or [],
+        )
     retrieve_with_options = getattr(retriever, "retrieve_with_options", None)
     if callable(retrieve_with_options):
         return retrieve_with_options(
@@ -520,6 +601,23 @@ def _critic_details(
         override = pre_critic.confidence_override
     payload["confidence_override"] = override
     return {"critic": payload}
+
+
+def _runtime_details(
+    *,
+    query_plan: QueryPlan | None,
+    retrieval_tasks: list[RetrievalTask],
+    plan_latency_ms: int | None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    details = dict(extra or {})
+    if query_plan is not None:
+        details["query_plan"] = serialize_query_plan(query_plan)
+        details["retrieval_tasks"] = [
+            serialize_retrieval_task(task) for task in retrieval_tasks
+        ]
+        details["plan_latency_ms"] = plan_latency_ms
+    return details
 
 
 def _combined_critic_status(
@@ -612,6 +710,9 @@ def _record_trace_metadata(
     settings: Settings,
     options: dict[str, Any],
     effective_top_k: int,
+    query_plan: QueryPlan | None,
+    retrieval_tasks: list[RetrievalTask],
+    plan_latency_ms: int | None,
 ) -> None:
     record_query_trace_metadata(
         query_id=query_id,
@@ -634,8 +735,27 @@ def _record_trace_metadata(
                 "corpus_version",
                 getattr(settings, "corpus_version", None),
             ),
+            "query_plan": serialize_query_plan(query_plan) if query_plan else None,
+            "retrieval_tasks": [
+                serialize_retrieval_task(task) for task in retrieval_tasks
+            ],
+            "plan_latency_ms": plan_latency_ms,
         },
     )
+
+
+def _plan_query(
+    orchestrator: QueryOrchestrator | None,
+    query: str,
+    options: dict[str, Any],
+) -> tuple[QueryPlan | None, list[RetrievalTask], int | None]:
+    if orchestrator is None or _truthy(options.get("disable_query_plan")):
+        return None, [], None
+    use_llm = not _truthy(options.get("query_plan_fallback_only"))
+    started = time.perf_counter()
+    plan = orchestrator.plan(query, use_llm=use_llm)
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    return plan, tasks_from_plan(plan), latency_ms
 
 
 def _int_option(options: dict[str, Any], name: str) -> int | None:
