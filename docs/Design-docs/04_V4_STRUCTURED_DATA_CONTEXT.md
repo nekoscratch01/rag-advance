@@ -354,9 +354,15 @@ metrics:
 formula:
   name: free_cash_flow
   expression: operating_cash_flow - capital_expenditure
-providers:
-  - sql
-  - text_hybrid
+retrieval_units:
+  - unit_id: u_sql
+    provider: sql
+    purpose: structured_calculation
+    text: "3M operating cash flow capital expenditure FY2018"
+  - unit_id: u_text
+    provider: hybrid
+    purpose: source_text_support
+    text: "3M FY2018 operating cash flow capital expenditure annual report wording"
 ```
 
 V4 SQLProvider 负责查两个输入值并计算。

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -15,9 +15,10 @@ from atlas.query_runtime.evidence_builder import (
 from atlas.retrieval.contracts import ProviderResult, source_anchor_from_candidate
 from atlas.retrieval.models.candidate import Candidate
 from atlas.retrieval.models.evidence import Evidence
+from atlas.retrieval.models.retrieval_task import RetrievalTask
+from atlas.retrieval.providers.text_hybrid.adapters.hybrid import HybridRetriever
+from atlas.retrieval.providers.text_hybrid.adapters.mode_switching import ModeSwitchingRetriever
 from atlas.retrieval.ranking.fusion import DEFAULT_RRF_K, WeightedRRFInput, weighted_rrf_fuse
-from atlas.retrieval.retrievers.hybrid import HybridRetriever
-from atlas.retrieval.retrievers.mode_switching import ModeSwitchingRetriever
 from atlas.retrieval.providers.text_hybrid.lanes import (
     SPARSE_BOOST_REPEAT,
     SUPPORTED_LANES,
@@ -27,11 +28,25 @@ from atlas.retrieval.providers.text_hybrid.lanes import (
     lane_query_text,
 )
 from atlas.retrieval.ranking.reranker import Reranker, rerank_with_context
-from atlas.retrieval.models.retrieval_task import RetrievalTask
 
 
 FUSION_BACKEND = "weighted_rrf"
 SUPPORTED_PROVIDER_STATUSES = frozenset({"ready", "supported", "ok", "enabled"})
+
+
+@dataclass(frozen=True)
+class TextHybridRun:
+    candidates: tuple[Candidate, ...]
+    evidence: tuple[Evidence, ...]
+    evidence_pack: Any | None
+    trace: dict[str, Any]
+    latency_ms: int
+
+
+@dataclass(frozen=True)
+class EvidenceBuildResult:
+    evidence: tuple[Evidence, ...]
+    evidence_pack: Any | None
 
 
 class TextHybridProvider:
@@ -68,8 +83,6 @@ class TextHybridProvider:
         self.lexical_top_k = lexical_top_k
         self.max_context_tokens = max_context_tokens
         self.default_mode = default_mode
-        self.last_evidence_pack = None
-        self.last_retrieval_trace: dict[str, Any] | None = None
         self.mode_switcher = ModeSwitchingRetriever(
             dense_retriever=dense_retriever,
             bm25_retriever=bm25_retriever,
@@ -110,8 +123,6 @@ class TextHybridProvider:
         filters: dict | None = None,
         options: dict | None = None,
     ) -> list[Evidence]:
-        self.last_evidence_pack = None
-        self.last_retrieval_trace = None
         evidence = self.mode_switcher.retrieve_with_options(
             db,
             query=query,
@@ -132,16 +143,7 @@ class TextHybridProvider:
         query_plan: QueryPlan,
         retrieval_tasks: list[RetrievalTask],
     ) -> list[Evidence]:
-        if not retrieval_tasks:
-            return self.retrieve_with_options(
-                db,
-                query=query,
-                top_k=top_k,
-                filters=filters,
-                options=options,
-            )
-
-        candidates = self.retrieve_candidates_with_plan(
+        run = self._run_with_plan(
             db,
             query=query,
             top_k=top_k,
@@ -150,13 +152,7 @@ class TextHybridProvider:
             query_plan=query_plan,
             retrieval_tasks=retrieval_tasks,
         )
-        return self._candidates_to_evidence(
-            db,
-            candidates,
-            top_k=top_k,
-            query_plan=query_plan,
-            retrieval_tasks=retrieval_tasks,
-        )
+        return list(run.evidence)
 
     def retrieve_provider_result(
         self,
@@ -169,10 +165,7 @@ class TextHybridProvider:
         query_plan: QueryPlan,
         retrieval_tasks: list[RetrievalTask],
     ) -> ProviderResult:
-        started = time.perf_counter()
-        self.last_evidence_pack = None
-        self.last_retrieval_trace = None
-        candidates = self.retrieve_candidates_with_plan(
+        run = self._run_with_plan(
             db,
             query=query,
             top_k=top_k,
@@ -181,28 +174,61 @@ class TextHybridProvider:
             query_plan=query_plan,
             retrieval_tasks=retrieval_tasks,
         )
-        evidence = self._candidates_to_evidence(
-            db,
-            candidates,
-            top_k=top_k,
-            query_plan=query_plan,
-            retrieval_tasks=retrieval_tasks,
-        )
-        trace = dict(self.last_retrieval_trace or {})
-        latency_ms = int(trace.get("retrieval_latency_ms") or 0)
-        if latency_ms <= 0:
-            latency_ms = int((time.perf_counter() - started) * 1000)
         return ProviderResult(
             provider="hybrid",
             task_id=None if len(retrieval_tasks) != 1 else retrieval_tasks[0].task_id,
             unit_id=None if len(retrieval_tasks) != 1 else retrieval_tasks[0].unit_id,
-            status="executed" if candidates or evidence else "empty",
-            candidates=tuple(candidates),
-            evidence=tuple(evidence),
-            evidence_pack=self.last_evidence_pack,
-            latency_ms=latency_ms,
+            status="executed" if run.candidates or run.evidence else "empty",
+            candidates=run.candidates,
+            evidence=run.evidence,
+            evidence_pack=run.evidence_pack,
+            latency_ms=run.latency_ms,
             reason=None,
+            trace=run.trace,
+        )
+
+    def _run_with_plan(
+        self,
+        db: Session,
+        *,
+        query: str,
+        top_k: int,
+        filters: dict | None,
+        options: dict[str, Any],
+        query_plan: QueryPlan,
+        retrieval_tasks: list[RetrievalTask],
+        build_evidence: bool = True,
+    ) -> TextHybridRun:
+        started = time.perf_counter()
+        candidates, trace = self._retrieve_candidates_with_trace(
+            db,
+            query=query,
+            top_k=top_k,
+            filters=filters,
+            options=options,
+            query_plan=query_plan,
+            retrieval_tasks=retrieval_tasks,
+        )
+        evidence_result = (
+            self._candidates_to_evidence(
+                db,
+                candidates,
+                top_k=top_k,
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+            )
+            if build_evidence
+            else EvidenceBuildResult(evidence=(), evidence_pack=None)
+        )
+        latency_ms = int(trace.get("retrieval_latency_ms") or 0)
+        if latency_ms <= 0:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+        return TextHybridRun(
+            candidates=tuple(candidates),
+            evidence=evidence_result.evidence,
+            evidence_pack=evidence_result.evidence_pack,
             trace=trace,
+            latency_ms=latency_ms,
         )
 
     def retrieve_candidates_with_plan(
@@ -216,8 +242,31 @@ class TextHybridProvider:
         query_plan: QueryPlan,
         retrieval_tasks: list[RetrievalTask],
     ) -> list[Candidate]:
+        run = self._run_with_plan(
+            db,
+            query=query,
+            top_k=top_k,
+            filters=filters,
+            options=options,
+            query_plan=query_plan,
+            retrieval_tasks=retrieval_tasks,
+            build_evidence=False,
+        )
+        return list(run.candidates)
+
+    def _retrieve_candidates_with_trace(
+        self,
+        db: Session,
+        *,
+        query: str,
+        top_k: int,
+        filters: dict | None,
+        options: dict[str, Any],
+        query_plan: QueryPlan,
+        retrieval_tasks: list[RetrievalTask],
+    ) -> tuple[list[Candidate], dict[str, Any]]:
         if top_k <= 0:
-            self.last_retrieval_trace = _provider_trace(
+            trace = _provider_trace(
                 query_plan=query_plan,
                 task_traces=[],
                 lane_traces=[],
@@ -225,7 +274,7 @@ class TextHybridProvider:
                 rrf_k=self.rrf_k,
                 fused_count=0,
             )
-            return []
+            return [], trace
 
         started = time.perf_counter()
         lane_candidate_groups: dict[str, list[Candidate]] = {}
@@ -315,7 +364,7 @@ class TextHybridProvider:
             limit=fused_limit,
         )
         retrieval_latency_ms = int((time.perf_counter() - started) * 1000)
-        self.last_retrieval_trace = _provider_trace(
+        provider_trace = _provider_trace(
             query_plan=query_plan,
             task_traces=task_traces,
             lane_traces=lane_traces,
@@ -327,7 +376,7 @@ class TextHybridProvider:
             _with_candidate_provider_metadata(
                 candidate,
                 query_plan=query_plan,
-                provider_trace=self.last_retrieval_trace,
+                provider_trace=provider_trace,
                 lane_traces=lane_traces,
                 lane_attributions=_lane_attributions_by_chunk(all_lane_candidates),
                 retrieval_latency_ms=retrieval_latency_ms,
@@ -342,7 +391,7 @@ class TextHybridProvider:
                 query_plan=query_plan,
                 retrieval_tasks=retrieval_tasks,
             )
-        return fused[:top_k]
+        return fused[:top_k], provider_trace
 
     def _rerank(
         self,
@@ -398,7 +447,7 @@ class TextHybridProvider:
         top_k: int,
         query_plan: QueryPlan | None = None,
         retrieval_tasks: list[RetrievalTask] | None = None,
-    ) -> list[Evidence]:
+    ) -> EvidenceBuildResult:
         if self.max_context_tokens is not None:
             trace_by_parent = _weighted_trace_by_parent(candidates)
             pack = build_evidence_pack_from_candidates(
@@ -413,7 +462,6 @@ class TextHybridProvider:
                     retrieval_tasks=retrieval_tasks or [],
                 ),
             )
-            self.last_evidence_pack = pack
             evidence = [
                 _with_provider_metadata(
                     item,
@@ -422,12 +470,17 @@ class TextHybridProvider:
                 )
                 for item in evidence_pack_to_evidence(pack)
             ]
-            return [_with_evidence_pack_metadata(item, pack) for item in evidence]
-        self.last_evidence_pack = None
-        return [
-            _candidate_to_evidence(candidate, index)
-            for index, candidate in enumerate(candidates[:top_k], start=1)
-        ]
+            return EvidenceBuildResult(
+                evidence=tuple(_with_evidence_pack_metadata(item, pack) for item in evidence),
+                evidence_pack=pack,
+            )
+        return EvidenceBuildResult(
+            evidence=tuple(
+                _candidate_to_evidence(candidate, index)
+                for index, candidate in enumerate(candidates[:top_k], start=1)
+            ),
+            evidence_pack=None,
+        )
 
 
 def _lanes_for_mode(lanes: tuple[str, ...], mode: str) -> tuple[str, ...]:
@@ -600,6 +653,7 @@ def _with_candidate_provider_metadata(
     metadata = dict(candidate.metadata)
     candidate_attributions = lane_attributions.get(candidate.chunk_id, [])
     metadata["provider"] = TEXT_HYBRID_PROVIDER
+    metadata["source_anchor"] = asdict(source_anchor_from_candidate(candidate))
     metadata["query_plan_id"] = query_plan.plan_id
     metadata["lane_attributions"] = candidate_attributions
     metadata["lanes"] = _ordered_unique(
@@ -742,20 +796,26 @@ def _evidence_pack_summary(pack) -> dict[str, Any]:
         "max_context_tokens": pack.max_context_tokens,
         "block_count": len(pack.blocks),
         "dropped_block_count": len(pack.dropped_blocks),
-        "dropped_blocks": [
-            {
-                "evidence_id": block.evidence_id,
-                "chunk_ids": list(block.chunk_ids),
-                "parent_id": block.parent_id,
-                "rank": block.rank,
-                "token_count": block.token_count,
-                "drop_reason": block.drop_reason,
-                "drop_stage": block.drop_stage,
-                "coverage": block.coverage,
-            }
-            for block in pack.dropped_blocks
-        ],
+        "blocks": [_evidence_block_summary(block) for block in pack.blocks],
+        "dropped_blocks": [_evidence_block_summary(block) for block in pack.dropped_blocks],
         "metadata": dict(pack.metadata),
+    }
+
+
+def _evidence_block_summary(block) -> dict[str, Any]:
+    metadata = dict(getattr(block, "metadata", {}) or {})
+    return {
+        "evidence_id": block.evidence_id,
+        "document_id": block.document_id,
+        "chunk_ids": list(block.chunk_ids),
+        "parent_id": block.parent_id,
+        "rank": block.rank,
+        "token_count": block.token_count,
+        "included_in_prompt": block.included_in_prompt,
+        "drop_reason": block.drop_reason,
+        "drop_stage": block.drop_stage,
+        "coverage": block.coverage,
+        "source_anchor": metadata.get("source_anchor"),
     }
 
 

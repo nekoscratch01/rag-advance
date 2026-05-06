@@ -1,7 +1,7 @@
 [project]
 name = "atlas-rag-kernel"
 version = "0.0.1"
-description = "Atlas V0.0 evidence-first RAG kernel"
+description = "Atlas V1 Evidence Kernel"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

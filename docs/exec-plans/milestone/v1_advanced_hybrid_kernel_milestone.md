@@ -355,6 +355,26 @@ retrieval-only 指标不能证明 generated answer reliability。
 全量 generated-answer 可靠性报告需要单独运行 /v1/query benchmark 后写入 benchmarks/。
 ```
 
+## 封板前结构收口
+
+本轮把 V1 从“主契约成立”推进到可作为 V2 Research Runtime 脚手架底座的结构状态：
+
+```text
+TextHybridProvider 主路径改为 state-free run object，不再依赖 last_* 实例字段回传 trace / pack
+dense / bm25 / hybrid / mode_switching 迁入 TextHybridProvider adapters，旧 retriever 路径只保留兼容 shim
+source_anchor 进入 retrieval_trace、candidate trace、evidence block trace
+provider_results 只序列化候选 trace payload，不保存未选中候选全文
+Overview / V1 arch / V3 / V4 / pyproject 清理旧 V0 和 text_hybrid-as-provider 口径
+```
+
+边界保持不变：
+
+```text
+不新增 SQLProvider / GraphProvider stub
+sql / graph skipped 是 ProviderRouter contract，不是 provider stub 行为
+V1 runtime 仍只执行 hybrid
+```
+
 ## 尚未完成
 
 ```text

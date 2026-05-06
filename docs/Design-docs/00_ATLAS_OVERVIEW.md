@@ -87,7 +87,7 @@ GraphRAG、SQL、Memory、Tools 都不能绕过 Evidence Kernel。
                                       ▼
                            ┌──────────────────────┐
                            │    Retrieval Plan     │
-                           │ tasks / budgets / use │
+                           │ tasks / budget / use  │
                            └──────────┬───────────┘
                                       │
                                       ▼
@@ -302,10 +302,9 @@ class QueryPlan:
     entities: list[Entity]
     periods: list[Period]
     metrics: list[Metric]
-    filters: dict
+    metadata_filter: dict
     retrieval_units: list[RetrievalUnit]
-    provider_hints: list[str]
-    budgets: RetrievalBudget
+    budget: RetrievalBudget
     risk_flags: list[str]
 ```
 
@@ -319,7 +318,7 @@ class RetrievalTask:
     provider: str
     purpose: str
     query_text: str
-    filters: dict
+    metadata_filter: dict
     must_have_terms: list[str]
     should_terms: list[str]
     top_k: int
@@ -590,15 +589,12 @@ src/atlas/
       base.py
       text_hybrid/
         provider.py
-        dense.py
-        bm25.py
-        table_row.py
-        fusion.py
-        reranker.py
-      graph/
-        provider.py        # V3
-      sql/
-        provider.py        # V4
+        lanes.py
+        adapters/
+          dense.py
+          bm25.py
+          hybrid.py
+          mode_switching.py
     candidate.py
     evidence.py
     fusion.py

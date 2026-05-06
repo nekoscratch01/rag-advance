@@ -1,14 +1,8 @@
-"""Concrete first-stage retrievers."""
+"""Legacy import namespace only.
 
-from atlas.retrieval.retrievers.bm25 import BM25Retriever
-from atlas.retrieval.retrievers.dense import DenseRetriever
-from atlas.retrieval.retrievers.hybrid import CandidateRetriever, HybridRetriever
-from atlas.retrieval.retrievers.mode_switching import ModeSwitchingRetriever
+Dense/BM25/hybrid retrievers are TextHybridProvider internal adapters, not
+top-level runtime provider contracts. Import new code from
+`atlas.retrieval.providers.text_hybrid.adapters`.
+"""
 
-__all__ = [
-    "BM25Retriever",
-    "CandidateRetriever",
-    "DenseRetriever",
-    "HybridRetriever",
-    "ModeSwitchingRetriever",
-]
+__all__: list[str] = []

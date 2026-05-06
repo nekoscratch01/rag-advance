@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 import time
 from typing import Any, Mapping
 
 from sqlalchemy.orm import Session
 
 from atlas.query_orchestrator.schema import QueryPlan
-from atlas.retrieval.contracts import ProviderResult, ProviderRouterResult
+from atlas.retrieval.contracts import (
+    ProviderResult,
+    ProviderRouterResult,
+    source_anchor_from_candidate,
+)
 from atlas.retrieval.models.retrieval_task import RetrievalTask
 
 
@@ -195,7 +200,6 @@ def _execute_provider(
         status="executed" if evidence else "empty",
         candidates=(),
         evidence=evidence,
-        evidence_pack=getattr(provider, "last_evidence_pack", None),
         latency_ms=latency_ms,
         reason=None,
         trace={
@@ -231,10 +235,51 @@ def serialize_provider_result(result: ProviderResult) -> dict[str, Any]:
         "unit_id": result.unit_id,
         "status": result.status,
         "candidate_count": len(result.candidates),
+        "candidates": [_candidate_trace_payload(candidate) for candidate in result.candidates],
         "evidence_count": len(result.evidence),
         "latency_ms": result.latency_ms,
         "reason": result.reason,
         "trace": dict(result.trace),
+    }
+
+
+def _candidate_trace_payload(candidate: Any) -> dict[str, Any]:
+    metadata = dict(getattr(candidate, "metadata", {}) or {})
+    source_anchor = metadata.get("source_anchor")
+    if not isinstance(source_anchor, dict):
+        source_anchor = asdict(source_anchor_from_candidate(candidate))
+    lane_attributions = metadata.get("lane_attributions")
+    if not isinstance(lane_attributions, list):
+        lane_attributions = []
+    lanes = metadata.get("lanes")
+    if not isinstance(lanes, list):
+        lanes = []
+    return {
+        "candidate_id": getattr(candidate, "candidate_id", None),
+        "provider": getattr(candidate, "provider", None) or metadata.get("provider"),
+        "chunk_id": getattr(candidate, "chunk_id", None),
+        "document_id": getattr(candidate, "document_id", None),
+        "parent_id": getattr(candidate, "parent_id", None),
+        "source_type": getattr(candidate, "source_type", None),
+        "page_start": getattr(candidate, "page_start", None),
+        "page_end": getattr(candidate, "page_end", None),
+        "rank": (
+            getattr(candidate, "final_rank", None)
+            or getattr(candidate, "rerank_rank", None)
+            or getattr(candidate, "fusion_rank", None)
+            or getattr(candidate, "lane_rank", None)
+        ),
+        "lane": getattr(candidate, "lane", None) or metadata.get("lane"),
+        "lanes": lanes,
+        "lane_attributions": lane_attributions,
+        "retrieval_task_id": getattr(candidate, "retrieval_task_id", None),
+        "retrieval_unit_id": getattr(candidate, "retrieval_unit_id", None),
+        "dense_score": getattr(candidate, "dense_score", None),
+        "lexical_score": getattr(candidate, "lexical_score", None),
+        "fusion_score": getattr(candidate, "fusion_score", None),
+        "rerank_score": getattr(candidate, "rerank_score", None),
+        "weighted_contribution": getattr(candidate, "weighted_contribution", None),
+        "source_anchor": source_anchor,
     }
 
 

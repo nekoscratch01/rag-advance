@@ -749,20 +749,28 @@ def _evidence_pack_summary(pack: object) -> dict[str, Any]:
         "max_context_tokens": getattr(pack, "max_context_tokens", None),
         "block_count": len(blocks),
         "dropped_block_count": len(dropped_blocks),
+        "blocks": [_evidence_block_summary(block) for block in blocks],
         "dropped_blocks": [
-            {
-                "evidence_id": getattr(block, "evidence_id", None),
-                "chunk_ids": list(getattr(block, "chunk_ids", ()) or ()),
-                "parent_id": getattr(block, "parent_id", None),
-                "rank": getattr(block, "rank", None),
-                "token_count": getattr(block, "token_count", None),
-                "drop_reason": getattr(block, "drop_reason", None),
-                "drop_stage": getattr(block, "drop_stage", None),
-                "coverage": getattr(block, "coverage", None),
-            }
-            for block in dropped_blocks
+            _evidence_block_summary(block) for block in dropped_blocks
         ],
         "metadata": dict(getattr(pack, "metadata", {}) or {}),
+    }
+
+
+def _evidence_block_summary(block: object) -> dict[str, Any]:
+    metadata = dict(getattr(block, "metadata", {}) or {})
+    return {
+        "evidence_id": getattr(block, "evidence_id", None),
+        "document_id": getattr(block, "document_id", None),
+        "chunk_ids": list(getattr(block, "chunk_ids", ()) or ()),
+        "parent_id": getattr(block, "parent_id", None),
+        "rank": getattr(block, "rank", None),
+        "token_count": getattr(block, "token_count", None),
+        "included_in_prompt": getattr(block, "included_in_prompt", None),
+        "drop_reason": getattr(block, "drop_reason", None),
+        "drop_stage": getattr(block, "drop_stage", None),
+        "coverage": getattr(block, "coverage", None),
+        "source_anchor": metadata.get("source_anchor"),
     }
 
 
@@ -776,8 +784,10 @@ def _evidence_trace_item(item: Evidence) -> dict[str, Any]:
         "retrieved_by": list(item.retrieved_by or metadata.get("retrieved_by") or ()),
         "provider": metadata.get("provider") or metadata.get("retrieval_provider"),
         "provider_status": metadata.get("provider_status"),
+        "source_anchor": metadata.get("source_anchor"),
         "lane": metadata.get("lane"),
         "lanes": list(metadata.get("lanes") or ()),
+        "parent_lanes": list(metadata.get("parent_lanes") or ()),
         "internal_lanes": list(metadata.get("internal_lanes") or ()),
         "lane_attributions": list(metadata.get("lane_attributions") or ()),
         "lane_contributions": list(

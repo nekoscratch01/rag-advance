@@ -1,7 +1,17 @@
 from qdrant_client import models
 
-from atlas.retrieval.retrievers.bm25 import _build_filter as build_bm25_filter
-from atlas.retrieval.retrievers.dense import _build_filter as build_dense_filter
+from atlas.retrieval.providers.text_hybrid.adapters.bm25 import (
+    _build_filter as build_bm25_filter,
+)
+from atlas.retrieval.providers.text_hybrid.adapters.dense import (
+    _build_filter as build_dense_filter,
+)
+
+
+def test_legacy_retrievers_namespace_has_no_runtime_exports() -> None:
+    import atlas.retrieval.retrievers as legacy_retrievers
+
+    assert legacy_retrievers.__all__ == []
 
 
 def _must_conditions(qdrant_filter):

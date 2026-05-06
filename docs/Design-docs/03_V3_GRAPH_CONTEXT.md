@@ -341,25 +341,34 @@ GraphProvider 不应该默认参与所有 query。
 - 明确要求某页或某文档字段
 ```
 
-### 7.3 Router 示例
+### 7.3 Retrieval Units 示例
 
 ```yaml
 query_type: entity_relationship
-providers:
-  graph:
-    mode: local
+retrieval_units:
+  - unit_id: u_graph_local
+    provider: graph
+    purpose: relationship_neighborhood
+    text: "target company supplier/customer/control relationships"
     top_k: 50
-    budget_ms: 1200
-  text_hybrid:
+    metadata:
+      graph_mode: local
+      latency_budget_ms: 1200
+  - unit_id: u_hybrid_support
+    provider: hybrid
+    purpose: source_text_grounding
+    text: "filing text that supports the discovered relationships"
     top_k: 50
-    budget_ms: 800
+    metadata:
+      latency_budget_ms: 800
 
 query_type: financial_numeric_fact
-providers:
-  text_hybrid:
+retrieval_units:
+  - unit_id: u_hybrid_numeric_text
+    provider: hybrid
+    purpose: numeric_source_text
+    text: "reported value and table wording in filings"
     top_k: 100
-  graph:
-    enabled: false
 ```
 
 ---

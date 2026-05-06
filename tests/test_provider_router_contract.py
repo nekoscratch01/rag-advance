@@ -4,9 +4,10 @@ from atlas.core.errors import AtlasError, ErrorCode
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
 from atlas.query_runtime.service import QueryRuntime
 from atlas.retrieval.contracts import ProviderResult
+from atlas.retrieval.models.candidate import Candidate
 from atlas.retrieval.models.evidence import Evidence
 from atlas.retrieval.models.retrieval_task import tasks_from_plan
-from atlas.retrieval.router import ProviderRouter
+from atlas.retrieval.router import ProviderRouter, serialize_provider_result
 from atlas.core.config import Settings, executable_query_providers
 from atlas.llm.base import GeneratedAnswer, LLMUsage
 
@@ -170,6 +171,41 @@ def test_provider_router_respects_task_non_executable_status_even_if_registered(
 def test_provider_router_rejects_internal_lane_registration() -> None:
     with pytest.raises(ValueError, match="internal_lane_registered_as_provider:bm25"):
         ProviderRouter({"bm25": object()})
+
+
+def test_provider_result_candidate_serialization_omits_candidate_text() -> None:
+    candidate = Candidate(
+        candidate_id="cand_1",
+        chunk_id="chk_1",
+        document_id="doc_1",
+        doc_name="Apple 10-K",
+        source_title="Apple 10-K",
+        company="Apple",
+        text="This candidate text should stay out of provider_results.",
+        page_start=10,
+        page_end=10,
+        chunk_index=1,
+        token_count=9,
+        retrieved_by=("dense",),
+        dense_rank=1,
+        dense_score=0.9,
+        provider="text_hybrid",
+        lane="dense",
+    )
+    payload = serialize_provider_result(
+        ProviderResult(
+            provider="hybrid",
+            task_id="rt_1",
+            unit_id="u0",
+            status="executed",
+            candidates=(candidate,),
+            trace={},
+        )
+    )
+
+    assert payload["candidates"][0]["chunk_id"] == "chk_1"
+    assert payload["candidates"][0]["source_anchor"]["chunk_id"] == "chk_1"
+    assert "text" not in payload["candidates"][0]
 
 
 def test_executable_query_providers_filters_unimplemented_future_providers() -> None:

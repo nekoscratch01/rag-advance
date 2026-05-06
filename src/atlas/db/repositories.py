@@ -139,16 +139,11 @@ def record_v1_trace_family(
         )
     )
     seen_pack_ids: set[str] = set()
+    seen_candidate_keys: set[tuple[Any, ...]] = set()
+    for item in _provider_candidate_payloads(provider_results):
+        _add_candidate_record(db, query_run.query_id, item, seen_candidate_keys)
     for item in _list_mapping(retrieval_trace.get("top_k")):
-        db.add(
-            CandidateRecord(
-                record_id=new_id("cand"),
-                query_id=query_run.query_id,
-                chunk_id=_optional_str(item.get("chunk_id")),
-                rank=_optional_int(item.get("rank")),
-                payload_json=item,
-            )
-        )
+        _add_candidate_record(db, query_run.query_id, item, seen_candidate_keys)
         db.add(
             EvidenceBlockRecord(
                 record_id=new_id("eb"),
@@ -230,6 +225,55 @@ def record_v1_trace_family(
                 payload_json=citation,
             )
         )
+
+
+def _add_candidate_record(
+    db: Session,
+    query_id: str,
+    item: dict[str, Any],
+    seen_candidate_keys: set[tuple[Any, ...]],
+) -> None:
+    key = (
+        item.get("candidate_id"),
+        item.get("chunk_id"),
+        item.get("rank"),
+        item.get("retrieval_task_id"),
+        item.get("retrieval_unit_id"),
+    )
+    if key in seen_candidate_keys:
+        return
+    seen_candidate_keys.add(key)
+    db.add(
+        CandidateRecord(
+            record_id=new_id("cand"),
+            query_id=query_id,
+            chunk_id=_optional_str(item.get("chunk_id")),
+            rank=_optional_int(
+                item.get("rank")
+                or item.get("final_rank")
+                or item.get("rerank_rank")
+                or item.get("fusion_rank")
+            ),
+            payload_json=item,
+        )
+    )
+
+
+def _provider_candidate_payloads(provider_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for result in provider_results:
+        provider = result.get("provider")
+        task_id = result.get("task_id")
+        unit_id = result.get("unit_id")
+        for item in _list_mapping(result.get("candidates")):
+            payload = {
+                "provider": provider,
+                "retrieval_task_id": task_id,
+                "retrieval_unit_id": unit_id,
+                **item,
+            }
+            candidates.append(payload)
+    return candidates
 
 
 def get_v1_trace_family(db: Session, query_id: str) -> dict[str, Any]:

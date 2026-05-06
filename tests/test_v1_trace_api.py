@@ -128,6 +128,20 @@ def test_record_v1_trace_family_persists_design_table_family_records() -> None:
                     "unit_id": "u0",
                     "status": "executed",
                     "reason": None,
+                    "candidates": [
+                        {
+                            "candidate_id": "cand_1",
+                            "chunk_id": "chk_1",
+                            "document_id": "doc_1",
+                            "rank": 1,
+                            "source_anchor": {
+                                "document_id": "doc_1",
+                                "chunk_id": "chk_1",
+                                "page_start": 60,
+                                "page_end": 60,
+                            },
+                        }
+                    ],
                 },
             ],
             "retrieval_trace": {
@@ -136,7 +150,25 @@ def test_record_v1_trace_family_persists_design_table_family_records() -> None:
                         "evidence_id": "c1",
                         "chunk_id": "chk_1",
                         "rank": 1,
-                        "evidence_pack": {"pack_id": "ep_1"},
+                        "source_anchor": {
+                            "document_id": "doc_1",
+                            "chunk_id": "chk_1",
+                            "page_start": 60,
+                            "page_end": 60,
+                        },
+                        "evidence_pack": {
+                            "pack_id": "ep_1",
+                            "blocks": [
+                                {
+                                    "evidence_id": "c1",
+                                    "chunk_ids": ["chk_1"],
+                                    "source_anchor": {
+                                        "document_id": "doc_1",
+                                        "chunk_id": "chk_1",
+                                    },
+                                }
+                            ],
+                        },
                     }
                 ]
             },
@@ -190,6 +222,13 @@ def test_record_v1_trace_family_persists_design_table_family_records() -> None:
     assert retrieval_result.payload_json["provider_results"][0]["status"] == (
         "skipped_non_executable"
     )
+    candidate_records = [item for item in db.added if item.__tablename__ == "candidates"]
+    evidence_block = next(item for item in db.added if item.__tablename__ == "evidence_blocks")
+    assert any(
+        item.payload_json.get("source_anchor", {}).get("chunk_id") == "chk_1"
+        for item in candidate_records
+    )
+    assert evidence_block.payload_json["source_anchor"]["chunk_id"] == "chk_1"
 
 
 def test_retrieve_endpoint_returns_plan_tasks_and_evidence() -> None:

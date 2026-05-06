@@ -8,6 +8,7 @@ from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
 from atlas.query_runtime.service import QueryRuntime
 from atlas.retrieval.models.candidate import Candidate
 from atlas.retrieval.models.evidence import Evidence
+from atlas.retrieval.contracts import ProviderResult
 from atlas.retrieval.providers.text_hybrid import TextHybridProvider
 from atlas.retrieval.models.retrieval_task import tasks_from_plan
 
@@ -113,11 +114,11 @@ class _FakeDB:
         self.commits += 1
 
 
-class _EmptyRetriever(TextHybridProvider):
+class _EmptyProvider:
     def __init__(self, pack) -> None:
-        self.last_evidence_pack = pack
+        self.pack = pack
 
-    def retrieve_with_plan(
+    def retrieve_provider_result(
         self,
         db,
         *,
@@ -128,7 +129,15 @@ class _EmptyRetriever(TextHybridProvider):
         query_plan,
         retrieval_tasks,
     ):
-        return []
+        return ProviderResult(
+            provider="hybrid",
+            task_id=retrieval_tasks[0].task_id if retrieval_tasks else None,
+            unit_id=retrieval_tasks[0].unit_id if retrieval_tasks else None,
+            status="empty",
+            evidence=(),
+            evidence_pack=self.pack,
+            trace={"provider": "text_hybrid", "provider_status": "empty"},
+        )
 
 
 def _provider(
@@ -186,7 +195,7 @@ def test_text_hybrid_provider_executes_v1_lanes_from_retrieval_tasks() -> None:
         planner="test",
     )
 
-    evidence = provider.retrieve_with_plan(
+    result = provider.retrieve_provider_result(
         object(),
         query=plan.original_query,
         top_k=5,
@@ -195,6 +204,7 @@ def test_text_hybrid_provider_executes_v1_lanes_from_retrieval_tasks() -> None:
         query_plan=plan,
         retrieval_tasks=tasks_from_plan(plan),
     )
+    evidence = list(result.evidence)
 
     assert evidence
     assert len(dense.calls) == 1
@@ -241,7 +251,7 @@ def test_text_hybrid_provider_skips_unsupported_provider_tasks_without_fake_evid
         planner="test",
     )
 
-    evidence = provider.retrieve_with_plan(
+    result = provider.retrieve_provider_result(
         object(),
         query=plan.original_query,
         top_k=5,
@@ -250,14 +260,14 @@ def test_text_hybrid_provider_skips_unsupported_provider_tasks_without_fake_evid
         query_plan=plan,
         retrieval_tasks=tasks_from_plan(plan),
     )
+    evidence = list(result.evidence)
 
     assert evidence == []
     assert dense.calls == []
     assert bm25.calls == []
-    assert provider.last_retrieval_trace is not None
-    assert provider.last_retrieval_trace["provider_status"] == "skipped"
-    assert provider.last_retrieval_trace["tasks"][0]["provider"] == "sql"
-    assert provider.last_retrieval_trace["tasks"][0]["unsupported_reason"]
+    assert result.trace["provider_status"] == "skipped"
+    assert result.trace["tasks"][0]["provider"] == "sql"
+    assert result.trace["tasks"][0]["unsupported_reason"]
 
 
 def test_text_hybrid_provider_repeats_must_terms_as_sparse_boost() -> None:
@@ -279,7 +289,7 @@ def test_text_hybrid_provider_repeats_must_terms_as_sparse_boost() -> None:
         planner="test",
     )
 
-    evidence = provider.retrieve_with_plan(
+    result = provider.retrieve_provider_result(
         object(),
         query=plan.original_query,
         top_k=3,
@@ -288,6 +298,7 @@ def test_text_hybrid_provider_repeats_must_terms_as_sparse_boost() -> None:
         query_plan=plan,
         retrieval_tasks=tasks_from_plan(plan),
     )
+    evidence = list(result.evidence)
 
     assert evidence
     assert dense.calls == []
@@ -302,7 +313,7 @@ def test_text_hybrid_provider_repeats_must_terms_as_sparse_boost() -> None:
     assert lane_trace["unit_query_text"] == "Compare revenue"
     assert lane_trace["sparse_boost_terms"] == ["Apple", "2023"]
     assert lane_trace["sparse_boost_repeat"] == 3
-    provider_lane_trace = provider.last_retrieval_trace["lanes"][0]
+    provider_lane_trace = result.trace["lanes"][0]
     assert provider_lane_trace["sparse_boost_terms"] == ["Apple", "2023"]
     assert provider_lane_trace["sparse_boost_repeat"] == 3
 
@@ -341,6 +352,89 @@ def test_text_hybrid_provider_keeps_dense_query_unboosted() -> None:
         bm25.calls[0]["query"]
         == "Compare revenue net sales Apple Apple Apple 2023 2023 2023"
     )
+
+
+def test_text_hybrid_provider_run_results_do_not_share_trace_state() -> None:
+    provider, _, _ = _provider()
+    first_plan = QueryPlan(
+        plan_id="plan_first",
+        original_query="First query",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_first",
+                purpose="first",
+                text="first text",
+                provider="hybrid",
+                metadata={"internal_lanes": ["bm25"]},
+            ),
+        ),
+    )
+    second_plan = QueryPlan(
+        plan_id="plan_second",
+        original_query="Second query",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_second",
+                purpose="second",
+                text="second text",
+                provider="hybrid",
+                metadata={"internal_lanes": ["bm25"]},
+            ),
+        ),
+    )
+
+    first = provider.retrieve_provider_result(
+        object(),
+        query=first_plan.original_query,
+        top_k=2,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=first_plan,
+        retrieval_tasks=tasks_from_plan(first_plan),
+    )
+    second = provider.retrieve_provider_result(
+        object(),
+        query=second_plan.original_query,
+        top_k=2,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=second_plan,
+        retrieval_tasks=tasks_from_plan(second_plan),
+    )
+
+    assert first.trace["query_plan_id"] == "plan_first"
+    assert first.trace["tasks"][0]["unit_id"] == "u_first"
+    assert second.trace["query_plan_id"] == "plan_second"
+    assert second.trace["tasks"][0]["unit_id"] == "u_second"
+
+
+def test_retrieve_with_plan_empty_tasks_stays_on_run_path() -> None:
+    provider, dense, bm25 = _provider()
+    plan = QueryPlan(
+        plan_id="plan_empty",
+        original_query="No executable units",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="empty_tasks",
+                text="No executable units",
+            ),
+        ),
+    )
+
+    evidence = provider.retrieve_with_plan(
+        object(),
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={"retrieval_mode": "dense_only"},
+        query_plan=plan,
+        retrieval_tasks=[],
+    )
+
+    assert evidence == []
+    assert dense.evidence_calls == []
+    assert bm25.evidence_calls == []
 
 
 def test_text_hybrid_provider_keeps_legacy_modes_available() -> None:
@@ -542,8 +636,14 @@ def test_parent_evidence_preserves_canonical_weighted_trace(monkeypatch: pytest.
     assert metadata["lane_trace"]["lane"] == "table"
 
 
-def test_query_runtime_uses_text_hybrid_provider_and_persists_plan_trace() -> None:
-    provider, dense, bm25 = _provider()
+def test_query_runtime_uses_text_hybrid_provider_and_persists_plan_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "atlas.retrieval.providers.text_hybrid.provider.repositories.get_parent_blocks_by_ids",
+        lambda db, parent_ids: {},
+    )
+    provider, dense, bm25 = _provider(shared_parent_id="parent_1", max_context_tokens=6000)
     plan = QueryPlan(
         plan_id="plan_1",
         original_query="What was 3M FY2018 capex?",
@@ -586,16 +686,31 @@ def test_query_runtime_uses_text_hybrid_provider_and_persists_plan_trace() -> No
     assert db.commits == 1
     assert query_runs
     assert query_runs[0].details_json["trace"]["metadata"]["query_plan"]["plan_id"] == "plan_1"
-    assert result.details["retrieval_trace"]["evidence_count"] == 3
-    assert {
-        lane
-        for item in result.details["retrieval_trace"]["top_k"]
-        for lane in item["lanes"]
-    } == {"dense", "bm25", "table"}
+    assert result.details["retrieval_trace"]["evidence_count"] == 1
+    assert set(result.details["retrieval_trace"]["top_k"][0]["parent_lanes"]) == {
+        "dense",
+        "bm25",
+        "table",
+    }
     assert all(
         item["lane_contributions"]
         for item in result.details["retrieval_trace"]["top_k"]
     )
+    trace_anchor = result.details["retrieval_trace"]["top_k"][0]["source_anchor"]
+    assert trace_anchor
+    assert "text" not in result.details["provider_results"][0]["candidates"][0]
+    assert result.details["provider_results"][0]["candidates"][0]["source_anchor"]["chunk_id"]
+    candidate_records = [
+        item for item in db.added if item.__class__.__name__ == "CandidateRecord"
+    ]
+    evidence_blocks = [
+        item for item in db.added if item.__class__.__name__ == "EvidenceBlockRecord"
+    ]
+    assert any(
+        item.payload_json.get("source_anchor") for item in candidate_records
+    )
+    assert evidence_blocks
+    assert evidence_blocks[0].payload_json.get("source_anchor")
 
 
 def test_query_runtime_exposes_empty_evidence_pack_drop_reasons() -> None:
@@ -635,7 +750,7 @@ def test_query_runtime_exposes_empty_evidence_pack_drop_reasons() -> None:
     )
     runtime = QueryRuntime(
         settings=Settings(openai_api_key=None, cache_enabled=False),
-        retriever=_EmptyRetriever(pack),
+        retriever=_EmptyProvider(pack),
         generator=_Generator(),
         orchestrator=_StaticOrchestrator(plan),
     )
@@ -683,11 +798,8 @@ def test_text_hybrid_provider_skips_unsupported_future_provider_tasks() -> None:
     assert bm25.calls == []
 
 
-def test_legacy_retrieve_options_clears_stale_evidence_pack() -> None:
-    from atlas.query_runtime.evidence_builder import build_evidence_pack_from_candidates
-
+def test_text_hybrid_provider_does_not_expose_stale_state_fields() -> None:
     provider, _, _ = _provider()
-    provider.last_evidence_pack = build_evidence_pack_from_candidates((), max_context_tokens=0)
 
     provider.retrieve_with_options(
         object(),
@@ -697,4 +809,5 @@ def test_legacy_retrieve_options_clears_stale_evidence_pack() -> None:
         options={"retrieval_mode": "dense_only"},
     )
 
-    assert provider.last_evidence_pack is None
+    assert not hasattr(provider, "last_evidence_pack")
+    assert not hasattr(provider, "last_retrieval_trace")

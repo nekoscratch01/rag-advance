@@ -17,10 +17,10 @@ from atlas.embeddings.bge_local import LocalBGEEmbedder
 from atlas.embeddings.bm25_sparse import BM25SparseEncoder
 from atlas.eval.metrics import _evidence_matches, dense_retrieval_metrics, normalize_expected_evidence
 from atlas.eval.service import EvalCase, load_cases
-from atlas.retrieval.retrievers.bm25 import BM25Retriever
-from atlas.retrieval.retrievers.dense import DenseRetriever
+from atlas.retrieval.providers.text_hybrid.adapters.bm25 import BM25Retriever
+from atlas.retrieval.providers.text_hybrid.adapters.dense import DenseRetriever
 from atlas.retrieval.models.evidence import Evidence
-from atlas.retrieval.retrievers.hybrid import HybridRetriever
+from atlas.retrieval.providers.text_hybrid.adapters.hybrid import HybridRetriever
 from atlas.retrieval.ranking.reranker import CrossEncoderReranker
 from atlas.vector.qdrant_client import get_qdrant_client
 
