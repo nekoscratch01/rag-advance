@@ -21,7 +21,7 @@ from atlas.retrieval.providers.text_hybrid.lanes import (
     lane_filters,
     lane_query_text,
 )
-from atlas.retrieval.reranker import Reranker
+from atlas.retrieval.reranker import Reranker, rerank_with_context
 from atlas.retrieval.retrieval_task import RetrievalTask
 
 
@@ -206,10 +206,24 @@ class TextHybridProvider:
             for candidate in fused
         ]
         if self._reranker_enabled(options):
-            fused = self._rerank(query=query, candidates=fused, top_k=top_k)
+            fused = self._rerank(
+                query=query,
+                candidates=fused,
+                top_k=top_k,
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+            )
         return fused[:top_k]
 
-    def _rerank(self, *, query: str, candidates: list[Candidate], top_k: int) -> list[Candidate]:
+    def _rerank(
+        self,
+        *,
+        query: str,
+        candidates: list[Candidate],
+        top_k: int,
+        query_plan: QueryPlan | None = None,
+        retrieval_tasks: list[RetrievalTask] | None = None,
+    ) -> list[Candidate]:
         if not candidates:
             return []
         if self.reranker is None:
@@ -223,10 +237,14 @@ class TextHybridProvider:
             if self.reranker_output_k is not None
             else top_k
         )
-        return self.reranker.rerank(
+        return rerank_with_context(
+            self.reranker,
             query=query,
             candidates=candidates[:rerank_top_k],
             top_k=rerank_top_k,
+            query_plan=query_plan,
+            retrieval_tasks=retrieval_tasks,
+            output_k=output_limit,
         )[:output_limit]
 
     def _lane_top_k(self, lane_name: str, task_top_k: int, requested_top_k: int) -> int:

@@ -8,7 +8,7 @@ from atlas.db import repositories
 from atlas.retrieval.candidate import Candidate
 from atlas.retrieval.evidence import Evidence
 from atlas.retrieval.fusion import DEFAULT_RRF_K, rrf_fuse
-from atlas.retrieval.reranker import Reranker
+from atlas.retrieval.reranker import Reranker, rerank_with_context
 
 
 class CandidateRetriever(Protocol):
@@ -120,10 +120,12 @@ class HybridRetriever:
             if self.reranker_output_k is not None
             else top_k
         )
-        reranked = self.reranker.rerank(
+        reranked = rerank_with_context(
+            self.reranker,
             query=query,
             candidates=fused[:rerank_top_k],
             top_k=rerank_top_k,
+            output_k=output_limit,
         )
         return reranked[:output_limit]
 

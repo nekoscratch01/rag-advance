@@ -666,6 +666,8 @@ def _evidence_trace_item(item: Evidence) -> dict[str, Any]:
         "fusion_score": metadata.get("fusion_score") or metadata.get("best_fusion_score"),
         "rerank_rank": metadata.get("rerank_rank") or metadata.get("best_rerank_rank"),
         "rerank_score": metadata.get("rerank_score") or metadata.get("best_rerank_score"),
+        "reranker": metadata.get("reranker"),
+        "reranker_input": metadata.get("reranker_input"),
     }
 
 

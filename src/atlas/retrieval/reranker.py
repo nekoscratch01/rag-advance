@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import inspect
 import time
 from typing import Any, Protocol, Sequence
 
+from atlas.query_orchestrator.schema import QueryPlan
 from atlas.retrieval.candidate import Candidate
+from atlas.retrieval.retrieval_task import RetrievalTask
 
 
 class Reranker(Protocol):
@@ -14,6 +17,9 @@ class Reranker(Protocol):
         query: str,
         candidates: Sequence[Candidate],
         top_k: int,
+        query_plan: QueryPlan | None = None,
+        retrieval_tasks: Sequence[RetrievalTask] | None = None,
+        output_k: int | None = None,
     ) -> list[Candidate]:
         ...
 
@@ -35,6 +41,9 @@ class CrossEncoderReranker:
         query: str,
         candidates: Sequence[Candidate],
         top_k: int,
+        query_plan: QueryPlan | None = None,
+        retrieval_tasks: Sequence[RetrievalTask] | None = None,
+        output_k: int | None = None,
     ) -> list[Candidate]:
         if top_k <= 0:
             return []
@@ -44,7 +53,19 @@ class CrossEncoderReranker:
 
         started = time.perf_counter()
         model = self._load_model()
-        pairs = [(query, candidate.text) for candidate in selected]
+        task_index = _task_index(retrieval_tasks or ())
+        pairs = [
+            (
+                _reranker_query(
+                    query=query,
+                    query_plan=query_plan,
+                    candidate=candidate,
+                    task_index=task_index,
+                ),
+                candidate.text,
+            )
+            for candidate in selected
+        ]
         raw_scores = model.predict(pairs, batch_size=self.batch_size)
         latency_ms = int((time.perf_counter() - started) * 1000)
         scores = [float(score) for score in raw_scores]
@@ -67,6 +88,10 @@ class CrossEncoderReranker:
                         model_name=self.model_name,
                         latency_ms=latency_ms,
                         candidates_scored=len(selected),
+                        output_k=output_k,
+                        query_plan=query_plan,
+                        retrieval_task=_candidate_task(candidate, task_index),
+                        fallback_query=query,
                     ),
                 )
             )
@@ -96,6 +121,40 @@ class CrossEncoderReranker:
         return self._model
 
 
+def rerank_with_context(
+    reranker: Reranker,
+    *,
+    query: str,
+    candidates: Sequence[Candidate],
+    top_k: int,
+    query_plan: QueryPlan | None = None,
+    retrieval_tasks: Sequence[RetrievalTask] | None = None,
+    output_k: int | None = None,
+) -> list[Candidate]:
+    kwargs = {
+        "query": query,
+        "candidates": candidates,
+        "top_k": top_k,
+        "query_plan": query_plan,
+        "retrieval_tasks": retrieval_tasks,
+        "output_k": output_k,
+    }
+    rerank = reranker.rerank
+    signature = inspect.signature(rerank)
+    if any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return rerank(**kwargs)
+    accepted = {
+        name
+        for name, parameter in signature.parameters.items()
+        if parameter.kind
+        in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    }
+    return rerank(**{key: value for key, value in kwargs.items() if key in accepted})
+
+
 def _rerank_sort_key(item: tuple[Candidate, float]) -> tuple[float, int, int, str]:
     candidate, score = item
     return (
@@ -114,18 +173,108 @@ def _metadata_with_reranker(
     model_name: str,
     latency_ms: int,
     candidates_scored: int,
+    output_k: int | None,
+    query_plan: QueryPlan | None,
+    retrieval_task: RetrievalTask | None,
+    fallback_query: str | None,
 ) -> dict[str, Any]:
     metadata = dict(candidate.metadata)
     fusion = metadata.get("fusion")
     if isinstance(fusion, dict):
         metadata["fusion"] = {**fusion, "final_rank": rank}
+    input_rank = candidate.final_rank or candidate.fusion_rank
     metadata["reranker"] = {
         "enabled": True,
         "model": model_name,
         "rank": rank,
+        "output_rank": rank,
         "score": score,
-        "input_rank": candidate.final_rank or candidate.fusion_rank,
+        "input_rank": input_rank,
+        "input_fusion_rank": candidate.fusion_rank,
         "latency_ms": latency_ms,
         "candidates_scored": candidates_scored,
+        "top_n": candidates_scored,
+        "top_m": output_k,
+        "query_plan_id": query_plan.plan_id if query_plan else None,
+        "retrieval_task_id": retrieval_task.task_id if retrieval_task else candidate.retrieval_task_id,
+        "retrieval_unit_id": retrieval_task.unit_id if retrieval_task else candidate.retrieval_unit_id,
     }
+    metadata["reranker_input"] = _reranker_input_trace(
+        candidate=candidate,
+        query_plan=query_plan,
+        retrieval_task=retrieval_task,
+        fallback_query=fallback_query,
+        input_rank=input_rank,
+    )
     return metadata
+
+
+def _reranker_query(
+    *,
+    query: str,
+    query_plan: QueryPlan | None,
+    candidate: Candidate,
+    task_index: dict[str, RetrievalTask],
+) -> str:
+    retrieval_task = _candidate_task(candidate, task_index)
+    parts = [query]
+    if query_plan is not None:
+        if query_plan.standalone_query and query_plan.standalone_query != query:
+            parts.append(query_plan.standalone_query)
+        if query_plan.entities:
+            parts.append("Entities: " + ", ".join(entity.value for entity in query_plan.entities))
+        if query_plan.periods:
+            parts.append(
+                "Periods: "
+                + ", ".join(period.normalized or period.value for period in query_plan.periods)
+            )
+        if query_plan.metrics:
+            parts.append(
+                "Metrics: "
+                + ", ".join(metric.canonical_name for metric in query_plan.metrics)
+            )
+    if retrieval_task is not None:
+        parts.append(f"Retrieval unit: {retrieval_task.query_text}")
+        if retrieval_task.must_have_terms:
+            parts.append("Must include: " + ", ".join(retrieval_task.must_have_terms))
+        if retrieval_task.should_terms:
+            parts.append("Should include: " + ", ".join(retrieval_task.should_terms))
+    return "\n".join(part for part in parts if part)
+
+
+def _reranker_input_trace(
+    *,
+    candidate: Candidate,
+    query_plan: QueryPlan | None,
+    retrieval_task: RetrievalTask | None,
+    fallback_query: str | None,
+    input_rank: int | None,
+) -> dict[str, Any]:
+    return {
+        "query_plan_id": query_plan.plan_id if query_plan else None,
+        "query_type": query_plan.query_type if query_plan else None,
+        "retrieval_task_id": retrieval_task.task_id if retrieval_task else candidate.retrieval_task_id,
+        "retrieval_unit_id": retrieval_task.unit_id if retrieval_task else candidate.retrieval_unit_id,
+        "query_text": retrieval_task.query_text if retrieval_task else fallback_query,
+        "must_have_terms": list(retrieval_task.must_have_terms) if retrieval_task else [],
+        "should_terms": list(retrieval_task.should_terms) if retrieval_task else [],
+        "candidate_id": candidate.candidate_id,
+        "chunk_id": candidate.chunk_id,
+        "input_rank": input_rank,
+        "candidate_text_chars": len(candidate.text),
+    }
+
+
+def _task_index(tasks: Sequence[RetrievalTask]) -> dict[str, RetrievalTask]:
+    index: dict[str, RetrievalTask] = {}
+    for task in tasks:
+        index[task.task_id] = task
+        index[task.unit_id] = task
+    return index
+
+
+def _candidate_task(candidate: Candidate, task_index: dict[str, RetrievalTask]) -> RetrievalTask | None:
+    for key in (candidate.retrieval_task_id, candidate.retrieval_unit_id):
+        if key and key in task_index:
+            return task_index[key]
+    return None

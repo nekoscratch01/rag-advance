@@ -12,7 +12,7 @@ from atlas.retrieval.fusion import (
 from atlas.retrieval.hybrid_retriever import CandidateRetriever, HybridRetriever
 from atlas.retrieval.mode_switching import ModeSwitchingRetriever
 from atlas.retrieval.providers.text_hybrid import TextHybridProvider
-from atlas.retrieval.reranker import CrossEncoderReranker, Reranker
+from atlas.retrieval.reranker import CrossEncoderReranker, Reranker, rerank_with_context
 
 __all__ = [
     "Candidate",
@@ -26,6 +26,7 @@ __all__ = [
     "TextHybridProvider",
     "WeightedRRFInput",
     "fusion_trace_payload",
+    "rerank_with_context",
     "rrf_fuse",
     "weighted_rrf_fuse",
 ]
