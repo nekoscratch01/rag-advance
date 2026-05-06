@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import replace
+from dataclasses import asdict, replace
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from atlas.query_runtime.evidence_builder import (
     build_evidence_pack_from_candidates,
     evidence_pack_to_evidence,
 )
+from atlas.retrieval.contracts import ProviderResult, source_anchor_from_candidate
 from atlas.retrieval.models.candidate import Candidate
 from atlas.retrieval.models.evidence import Evidence
 from atlas.retrieval.ranking.fusion import DEFAULT_RRF_K, WeightedRRFInput, weighted_rrf_fuse
@@ -155,6 +156,53 @@ class TextHybridProvider:
             top_k=top_k,
             query_plan=query_plan,
             retrieval_tasks=retrieval_tasks,
+        )
+
+    def retrieve_provider_result(
+        self,
+        db: Session,
+        *,
+        query: str,
+        top_k: int,
+        filters: dict | None,
+        options: dict,
+        query_plan: QueryPlan,
+        retrieval_tasks: list[RetrievalTask],
+    ) -> ProviderResult:
+        started = time.perf_counter()
+        self.last_evidence_pack = None
+        self.last_retrieval_trace = None
+        candidates = self.retrieve_candidates_with_plan(
+            db,
+            query=query,
+            top_k=top_k,
+            filters=filters,
+            options=options or {},
+            query_plan=query_plan,
+            retrieval_tasks=retrieval_tasks,
+        )
+        evidence = self._candidates_to_evidence(
+            db,
+            candidates,
+            top_k=top_k,
+            query_plan=query_plan,
+            retrieval_tasks=retrieval_tasks,
+        )
+        trace = dict(self.last_retrieval_trace or {})
+        latency_ms = int(trace.get("retrieval_latency_ms") or 0)
+        if latency_ms <= 0:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+        return ProviderResult(
+            provider="hybrid",
+            task_id=None if len(retrieval_tasks) != 1 else retrieval_tasks[0].task_id,
+            unit_id=None if len(retrieval_tasks) != 1 else retrieval_tasks[0].unit_id,
+            status="executed" if candidates or evidence else "empty",
+            candidates=tuple(candidates),
+            evidence=tuple(evidence),
+            evidence_pack=self.last_evidence_pack,
+            latency_ms=latency_ms,
+            reason=None,
+            trace=trace,
         )
 
     def retrieve_candidates_with_plan(
@@ -498,6 +546,7 @@ def _candidate_to_evidence(candidate: Candidate, evidence_index: int) -> Evidenc
     metadata = {
         **candidate_metadata,
         "provider": TEXT_HYBRID_PROVIDER,
+        "source_anchor": asdict(source_anchor_from_candidate(candidate)),
         "lane": lane,
         "lanes": lanes,
         "lane_attributions": lane_attributions,

@@ -30,13 +30,13 @@ async def lifespan(_app: FastAPI):
 def create_app() -> FastAPI:
     configure_logging()
     settings = get_settings()
-    app = FastAPI(title=settings.app_name, version="0.0.1", lifespan=lifespan)
+    app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
 
     @app.get("/")
     def root() -> dict[str, object]:
         return {
             "name": settings.app_name,
-            "version": "0.0.1",
+            "version": "1.0.0",
             "status_endpoint": f"{settings.api_prefix}/health",
             "docs": "/docs",
             "endpoints": [

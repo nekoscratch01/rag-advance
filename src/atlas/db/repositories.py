@@ -97,6 +97,8 @@ def record_v1_trace_family(
     query_plan = _first_mapping(details.get("query_plan"), trace_metadata.get("query_plan"))
     retrieval_tasks = _list_mapping(details.get("retrieval_tasks") or trace_metadata.get("retrieval_tasks"))
     retrieval_trace = _mapping(details.get("retrieval_trace"))
+    provider_router_trace = _mapping(details.get("provider_router_trace"))
+    provider_results = _list_mapping(details.get("provider_results"))
     critic = _mapping(details.get("critic"))
     evidence_pack = _mapping(details.get("evidence_pack"))
 
@@ -129,6 +131,8 @@ def record_v1_trace_family(
             or _optional_str(trace_metadata.get("retrieval_status")),
             payload_json={
                 "retrieval_trace": retrieval_trace,
+                "provider_router_trace": provider_router_trace,
+                "provider_results": provider_results,
                 "event_count": len(retrieval_events),
                 "events": [_retrieval_event_payload(event) for event in retrieval_events],
             },

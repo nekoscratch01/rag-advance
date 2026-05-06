@@ -4,14 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from atlas.api.dependencies import get_query_orchestrator, get_query_runtime
+from atlas.api.dependencies import get_provider_router, get_query_orchestrator, get_query_runtime
+from atlas.core.config import Settings, executable_query_providers
 from atlas.db.repositories import get_chunks_by_ids, get_query_run, get_v1_trace_family
 from atlas.db.session import get_db
 from atlas.query_orchestrator.schema import serialize_query_plan
 from atlas.query_orchestrator.service import QueryOrchestrator
-from atlas.query_runtime.service import QueryRuntime, _retrieve_evidence
+from atlas.query_runtime.service import QueryRuntime, _retrieve_with_router
 from atlas.query_runtime.trace_logger import get_query_trace_metadata
 from atlas.retrieval.models.retrieval_task import serialize_retrieval_task, tasks_from_plan
+from atlas.retrieval.router import ProviderRouter
 
 router = APIRouter(prefix="/query", tags=["query"])
 retrieve_router = APIRouter(prefix="/retrieve", tags=["retrieval"])
@@ -28,10 +30,14 @@ class QueryRequest(BaseModel):
 def plan_query(
     request: QueryRequest,
     orchestrator: QueryOrchestrator = Depends(get_query_orchestrator),
+    provider_router: ProviderRouter = Depends(get_provider_router),
 ) -> dict[str, Any]:
     use_llm = not _truthy(request.options.get("query_plan_fallback_only"))
     plan = orchestrator.plan(request.query, use_llm=use_llm)
-    tasks = tasks_from_plan(plan)
+    tasks = tasks_from_plan(
+        plan,
+        executable_providers=provider_router.executable_providers,
+    )
     return {
         "query_plan": serialize_query_plan(plan),
         "retrieval_tasks": [serialize_retrieval_task(task) for task in tasks],
@@ -70,25 +76,56 @@ def retrieve_only(
 ) -> dict[str, Any]:
     use_llm = not _truthy(request.options.get("query_plan_fallback_only"))
     plan = orchestrator.plan(request.query, use_llm=use_llm)
-    tasks = tasks_from_plan(plan)
+    executable_providers = _runtime_executable_providers(runtime)
+    tasks = tasks_from_plan(plan, executable_providers=executable_providers)
     top_k = request.top_k or runtime.settings.default_top_k
-    evidence = _retrieve_evidence(
-        runtime.retriever,
-        db,
-        query=request.query,
-        top_k=min(top_k, runtime.settings.max_top_k),
-        filters=request.filters,
-        options={
-            **request.options,
-            "query_plan": serialize_query_plan(plan),
-            "retrieval_tasks": [serialize_retrieval_task(task) for task in tasks],
-        },
-        query_plan=plan,
-        retrieval_tasks=tasks,
-    )
+    runtime_options = {
+        **request.options,
+        "query_plan": serialize_query_plan(plan),
+        "retrieval_tasks": [serialize_retrieval_task(task) for task in tasks],
+    }
+    provider_results = []
+    if hasattr(runtime, "provider_router"):
+        router_result = _retrieve_with_router(
+            runtime.provider_router,
+            db,
+            query=request.query,
+            top_k=min(top_k, runtime.settings.max_top_k),
+            filters=request.filters,
+            options=runtime_options,
+            query_plan=plan,
+            retrieval_tasks=tasks,
+        )
+        evidence = list(router_result.evidence)
+        provider_results = [
+            {
+                "provider": result.provider,
+                "task_id": result.task_id,
+                "unit_id": result.unit_id,
+                "status": result.status,
+                "reason": result.reason,
+                "candidate_count": len(result.candidates),
+                "evidence_count": len(result.evidence),
+            }
+            for result in router_result.provider_results
+        ]
+    else:
+        from atlas.query_runtime.service import _retrieve_evidence
+
+        evidence = _retrieve_evidence(
+            runtime.retriever,
+            db,
+            query=request.query,
+            top_k=min(top_k, runtime.settings.max_top_k),
+            filters=request.filters,
+            options=runtime_options,
+            query_plan=plan,
+            retrieval_tasks=tasks,
+        )
     return {
         "query_plan": serialize_query_plan(plan),
         "retrieval_tasks": [serialize_retrieval_task(task) for task in tasks],
+        "provider_results": provider_results,
         "evidence": [_serialize_evidence(item) for item in evidence],
     }
 
@@ -210,6 +247,17 @@ def _serialize_query_run(query_run) -> dict[str, Any]:
             for event in query_run.generation_events
         ],
     }
+
+
+def _runtime_executable_providers(runtime: QueryRuntime) -> tuple[str, ...]:
+    provider_router = getattr(runtime, "provider_router", None)
+    executable = getattr(provider_router, "executable_providers", None)
+    if executable is not None:
+        return tuple(executable)
+    settings = getattr(runtime, "settings", None)
+    if isinstance(settings, Settings):
+        return executable_query_providers(settings)
+    return ("hybrid",)
 
 
 def _serialize_retrieval_event(event, chunk) -> dict[str, Any]:

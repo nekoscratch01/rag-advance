@@ -3,32 +3,21 @@ import re
 import time
 from typing import Any
 
-from openai import OpenAI
-
 from atlas.core.config import Settings
-from atlas.core.errors import AtlasError, ErrorCode
+from atlas.llm.clients import LLMClient, OpenAIClient
 from atlas.llm.base import GeneratedAnswer, LLMUsage
 from atlas.llm.prompts import ANSWER_INSTRUCTIONS, build_answer_input
 from atlas.retrieval.models.evidence import Evidence
 
 
 class OpenAIAnswerGenerator:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, client: LLMClient | None = None) -> None:
         self.settings = settings
         self.model_name = settings.llm_model
+        self.client = client
 
     def generate(self, *, query: str, evidence: list[Evidence]) -> GeneratedAnswer:
-        if self.settings.openai_api_key is None:
-            raise AtlasError(
-                ErrorCode.CONFIGURATION_ERROR,
-                "OPENAI_API_KEY is required for answer generation.",
-                status_code=500,
-            )
-
-        client = OpenAI(
-            api_key=self.settings.openai_api_key.get_secret_value(),
-            timeout=self.settings.llm_timeout_seconds,
-        )
+        client = self.client or OpenAIClient(self.settings)
         request: dict[str, Any] = {
             "model": self.settings.llm_model,
             "instructions": ANSWER_INSTRUCTIONS,
@@ -39,24 +28,12 @@ class OpenAIAnswerGenerator:
         }
 
         started = time.perf_counter()
-        try:
-            try:
-                response = client.responses.create(**request)
-            except TypeError:
-                request.pop("store", None)
-                response = client.responses.create(**request)
-        except Exception as exc:
-            raise AtlasError(
-                ErrorCode.UPSTREAM_LLM_UNAVAILABLE,
-                "OpenAI response generation failed.",
-                status_code=502,
-                details={"type": exc.__class__.__name__},
-            ) from exc
+        response = client.create_response(request)
 
         _ = int((time.perf_counter() - started) * 1000)
-        raw_output = _extract_output_text(response)
+        raw_output = response.output_text
         parsed = _parse_json_output(raw_output)
-        usage = getattr(response, "usage", None)
+        usage = response.usage
         return GeneratedAnswer(
             answer=parsed.get("answer") or raw_output,
             confidence=_normalize_confidence(parsed.get("confidence")),
@@ -66,20 +43,6 @@ class OpenAIAnswerGenerator:
             ),
             raw_output=raw_output,
         )
-
-
-def _extract_output_text(response: Any) -> str:
-    output_text = getattr(response, "output_text", None)
-    if output_text:
-        return str(output_text)
-
-    parts: list[str] = []
-    for item in getattr(response, "output", []) or []:
-        for content in getattr(item, "content", []) or []:
-            text = getattr(content, "text", None)
-            if text:
-                parts.append(str(text))
-    return "\n".join(parts).strip()
 
 
 def _parse_json_output(raw_output: str) -> dict[str, str]:

@@ -181,13 +181,13 @@ def test_sql_and_graph_units_compile_to_skipped_tasks() -> None:
                 unit_id="u_sql",
                 purpose="numerical_aggregation",
                 text="Apple Microsoft R&D 2023",
-                retrievers=("sql",),
+                provider="sql",
             ),
             RetrievalUnit(
                 unit_id="u_graph",
                 purpose="supply_chain_discovery",
                 text="Apple Vision Pro display suppliers",
-                retrievers=("graph",),
+                provider="graph",
             ),
         ),
     )
@@ -195,6 +195,6 @@ def test_sql_and_graph_units_compile_to_skipped_tasks() -> None:
     tasks = tasks_from_plan(plan)
 
     assert [task.provider for task in tasks] == ["sql", "graph"]
-    assert all(task.provider_status == "skipped" for task in tasks)
+    assert all(task.provider_status == "skipped_non_executable" for task in tasks)
     assert all(task.lanes == () for task in tasks)
     assert all(task.unsupported_reason for task in tasks)

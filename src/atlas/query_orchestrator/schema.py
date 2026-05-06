@@ -17,6 +17,7 @@ QueryType = Literal[
 ]
 
 ProviderName = Literal["hybrid", "sql", "graph"]
+KNOWN_PROVIDERS: tuple[ProviderName, ...] = ("hybrid", "sql", "graph")
 
 
 class _StrictModel(BaseModel):
@@ -59,7 +60,7 @@ class RetrievalUnit(_StrictModel):
     unit_id: str
     purpose: str
     text: str
-    retrievers: tuple[ProviderName, ...] = ("hybrid",)
+    provider: ProviderName = "hybrid"
     metadata_filter: dict[str, Any] = Field(default_factory=dict)
     must_have_terms: tuple[str, ...] = ()
     should_terms: tuple[str, ...] = ()
@@ -67,6 +68,35 @@ class RetrievalUnit(_StrictModel):
     weight: float = Field(default=1.0, gt=0.0)
     lane_weights: dict[str, float] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_retrievers(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        legacy = payload.pop("retrievers", None)
+        provider = payload.get("provider")
+        if legacy is None:
+            return payload
+        if isinstance(legacy, str):
+            retrievers = (legacy,)
+        else:
+            retrievers = tuple(str(item) for item in legacy)
+        if not retrievers:
+            raise ValueError("retrieval unit requires a provider")
+        if len(retrievers) != 1:
+            raise ValueError(
+                "compound_unit_must_be_split: compound providers like [sql, hybrid] "
+                "are forbidden. Split this into separate single-purpose unit_proposals."
+            )
+        if provider is not None and str(provider) != retrievers[0]:
+            raise ValueError("provider and legacy retrievers disagree")
+        payload["provider"] = retrievers[0]
+        metadata = dict(payload.get("metadata") or {})
+        metadata["legacy_retrievers"] = list(retrievers)
+        payload["metadata"] = metadata
+        return payload
 
     @field_validator("text")
     @classmethod
@@ -76,21 +106,16 @@ class RetrievalUnit(_StrictModel):
             raise ValueError("retrieval unit text must not be blank")
         return text
 
-    @field_validator("retrievers")
+    @field_validator("provider")
     @classmethod
-    def _retrievers_single_provider(cls, value: tuple[ProviderName, ...]) -> tuple[ProviderName, ...]:
-        if not value:
-            raise ValueError("retrieval unit requires at least one retriever")
-        if len(value) != 1:
-            raise ValueError(
-                "compound_unit_must_be_split: compound retrievers like [sql, hybrid] "
-                "are forbidden. Split this into separate single-purpose unit_proposals."
-            )
+    def _provider_known(cls, value: ProviderName) -> ProviderName:
+        if value not in KNOWN_PROVIDERS:
+            raise ValueError(f"unknown_provider:{value}")
         return value
 
     @property
-    def provider(self) -> ProviderName:
-        return self.retrievers[0]
+    def retrievers(self) -> tuple[ProviderName, ...]:
+        return (self.provider,)
 
 
 class QueryPlan(_StrictModel):

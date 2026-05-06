@@ -32,7 +32,7 @@ def load_local_document(path_value: str, *, allowed_roots: list[Path]) -> Loaded
     if suffix not in SUPPORTED_SUFFIXES:
         raise AtlasError(
             ErrorCode.UNSUPPORTED_FILE_TYPE,
-            f"Unsupported file type: {suffix}. V0 only supports PDF, Markdown, and TXT.",
+            f"Unsupported file type: {suffix}. Atlas supports PDF, Markdown, and TXT.",
             status_code=400,
             details={"path": str(path), "supported": sorted(SUPPORTED_SUFFIXES)},
         )

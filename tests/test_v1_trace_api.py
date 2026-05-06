@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from atlas.api.dependencies import get_query_orchestrator, get_query_runtime
+from atlas.api.dependencies import get_provider_router, get_query_orchestrator, get_query_runtime
 from atlas.core.config import Settings
 from atlas.db.models import GenerationEvent, QueryRun, RetrievalEvent
 from atlas.db.repositories import record_v1_trace_family
@@ -11,6 +11,7 @@ from atlas.main import create_app
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
 from atlas.retrieval.models.evidence import Evidence
 from atlas.retrieval.models.retrieval_task import tasks_from_plan
+from atlas.retrieval.router import ProviderRouter
 
 
 class _FakeDB:
@@ -84,7 +85,7 @@ def _plan() -> QueryPlan:
                 unit_id="u0",
                 purpose="original",
                 text="3M FY2018 capex",
-                retrievers=("hybrid",),
+                provider="hybrid",
                 metadata={"internal_lanes": ["dense", "bm25"]},
             ),
         ),
@@ -107,6 +108,28 @@ def test_record_v1_trace_family_persists_design_table_family_records() -> None:
         details_json={
             "query_plan": {"plan_id": "plan_1", "planner": "test"},
             "retrieval_tasks": [{"task_id": "rt_1", "unit_id": "u0"}],
+            "provider_router_trace": {
+                "query_plan_id": "plan_1",
+                "known_providers": ["hybrid", "sql", "graph"],
+                "executable_providers": ["hybrid"],
+                "status": "partial",
+            },
+            "provider_results": [
+                {
+                    "provider": "sql",
+                    "task_id": "rt_sql",
+                    "unit_id": "u_sql",
+                    "status": "skipped_non_executable",
+                    "reason": "provider_not_executable_in_v1:sql",
+                },
+                {
+                    "provider": "hybrid",
+                    "task_id": "rt_1",
+                    "unit_id": "u0",
+                    "status": "executed",
+                    "reason": None,
+                },
+            ],
             "retrieval_trace": {
                 "top_k": [
                     {
@@ -163,6 +186,10 @@ def test_record_v1_trace_family_persists_design_table_family_records() -> None:
         "citation_verifications",
     } <= table_names
     assert retrieval_result.status == "completed"
+    assert retrieval_result.payload_json["provider_router_trace"]["status"] == "partial"
+    assert retrieval_result.payload_json["provider_results"][0]["status"] == (
+        "skipped_non_executable"
+    )
 
 
 def test_retrieve_endpoint_returns_plan_tasks_and_evidence() -> None:
@@ -192,3 +219,25 @@ def test_retrieve_endpoint_returns_plan_tasks_and_evidence() -> None:
     assert [task.unit_id for task in retriever.received_tasks] == [
         task.unit_id for task in tasks_from_plan(plan)
     ]
+
+
+def test_plan_endpoint_uses_runtime_provider_router_capability() -> None:
+    plan = _plan()
+    app = create_app()
+    app.dependency_overrides[get_query_orchestrator] = lambda: _FakeOrchestrator(plan)
+    app.dependency_overrides[get_provider_router] = lambda: ProviderRouter({})
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/query/plan",
+        json={
+            "query": plan.original_query,
+            "top_k": 1,
+            "options": {"query_plan_fallback_only": True},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["retrieval_tasks"][0]["provider"] == "hybrid"
+    assert payload["retrieval_tasks"][0]["provider_status"] == "skipped_non_executable"

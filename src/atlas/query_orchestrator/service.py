@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from atlas.core.config import Settings, enabled_query_providers
+from atlas.core.config import Settings, executable_query_providers, known_query_providers
 from atlas.query_orchestrator.fallback import build_fallback_plan
 from atlas.query_orchestrator.llm_planner import LLMQueryPlanner
 from atlas.query_orchestrator.ontology import FinanceMetricOntology
@@ -22,7 +22,7 @@ class QueryOrchestrator:
         )
         self.validator = QueryPlanValidator(
             self.ontology,
-            enabled_providers=enabled_query_providers(settings),
+            known_providers=known_query_providers(settings),
         )
         self.llm_planner = llm_planner or LLMQueryPlanner(settings=settings, ontology=self.ontology)
 
@@ -38,6 +38,10 @@ class QueryOrchestrator:
                             "validation_status": "validated",
                             "metadata": {
                                 **candidate.metadata,
+                                "known_providers": list(known_query_providers(self.settings)),
+                                "executable_providers": list(
+                                    executable_query_providers(self.settings)
+                                ),
                                 "validation": {
                                     "warnings": list(validation.warnings),
                                     "reasons": list(validation.reasons),
@@ -76,6 +80,8 @@ class QueryOrchestrator:
                 "validation_status": "validated" if validation.ok else "fallback_unvalidated",
                 "metadata": {
                     **fallback.metadata,
+                    "known_providers": list(known_query_providers(self.settings)),
+                    "executable_providers": list(executable_query_providers(self.settings)),
                     "fallback_reason": fallback_reason,
                     "llm_rejection": fallback_details,
                     "validation": {

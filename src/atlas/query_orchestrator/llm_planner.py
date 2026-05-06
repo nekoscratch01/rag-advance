@@ -4,11 +4,11 @@ import json
 import re
 from typing import Any
 
-from openai import OpenAI
 from pydantic import ValidationError
 
-from atlas.core.config import Settings, enabled_query_providers
+from atlas.core.config import Settings, executable_query_providers, known_query_providers
 from atlas.core.ids import new_id
+from atlas.llm.clients import LLMClient, OpenAIClient
 from atlas.query_orchestrator.ontology import FinanceMetricOntology
 from atlas.query_orchestrator.prompts import (
     build_query_planner_input,
@@ -29,27 +29,31 @@ PLANNER_PROVIDER_NAMES = ("hybrid", "sql", "graph")
 
 
 class LLMQueryPlanner:
-    def __init__(self, *, settings: Settings, ontology: FinanceMetricOntology) -> None:
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        ontology: FinanceMetricOntology,
+        client: LLMClient | None = None,
+    ) -> None:
         self.settings = settings
         self.ontology = ontology
+        self.client = client
 
     def available(self) -> bool:
-        return self.settings.openai_api_key is not None
+        return self.client is not None or self.settings.openai_api_key is not None
 
     def plan(self, query: str, *, validation_feedback: str | None = None) -> QueryPlan:
-        if self.settings.openai_api_key is None:
+        if self.client is None and self.settings.openai_api_key is None:
             raise RuntimeError("OPENAI_API_KEY is required for LLM query planning.")
 
-        client = OpenAI(
-            api_key=self.settings.openai_api_key.get_secret_value(),
-            timeout=self.settings.llm_timeout_seconds,
-        )
+        client = self.client or OpenAIClient(self.settings)
         feedback = validation_feedback
         last_error: Exception | None = None
         attempts = _planner_attempt_count(self.settings)
         validator = QueryPlanValidator(
             self.ontology,
-            enabled_providers=_enabled_provider_names(self.settings),
+            known_providers=_known_provider_names(self.settings),
         )
         for _attempt in range(attempts):
             raw = self._request_plan(client, query, validation_feedback=feedback)
@@ -73,15 +77,19 @@ class LLMQueryPlanner:
 
     def _request_plan(
         self,
-        client: OpenAI,
+        client: LLMClient,
         query: str,
         *,
         validation_feedback: str | None = None,
     ) -> dict[str, Any]:
-        enabled_providers = _enabled_provider_names(self.settings)
+        known_providers = _known_provider_names(self.settings)
+        executable_providers = executable_query_providers(self.settings)
         request = {
             "model": self.settings.query_planner_model,
-            "instructions": build_query_planner_instructions(enabled_providers),
+            "instructions": build_query_planner_instructions(
+                known_providers,
+                executable_providers,
+            ),
             "input": build_query_planner_input(
                 query,
                 _ontology_excerpt(self.ontology),
@@ -94,19 +102,14 @@ class LLMQueryPlanner:
                 "format": {
                     "type": "json_schema",
                     "name": "atlas_query_plan",
-                    "schema": _llm_plan_schema(enabled_providers),
+                    "schema": _llm_plan_schema(known_providers),
                     "strict": True,
                 }
             },
             "store": False,
         }
-        try:
-            response = client.responses.create(**request)
-        except TypeError:
-            request.pop("text", None)
-            response = client.responses.create(**request)
-
-        raw_output = _extract_output_text(response)
+        response = client.create_response(request)
+        raw_output = response.output_text
         return _parse_json_object(raw_output)
 
     def _plan_from_raw(self, query: str, raw: dict[str, Any]) -> QueryPlan:
@@ -139,7 +142,8 @@ class LLMQueryPlanner:
             validation_status="unvalidated",
             metadata={
                 "model": self.settings.query_planner_model,
-                "enabled_providers": list(_enabled_provider_names(self.settings)),
+                "known_providers": list(_known_provider_names(self.settings)),
+                "executable_providers": list(executable_query_providers(self.settings)),
             },
         )
 
@@ -186,12 +190,22 @@ def _metric_from_raw(item: Any, ontology: FinanceMetricOntology) -> dict[str, An
 def _retrieval_unit_from_raw(item: Any, index: int) -> RetrievalUnit:
     raw = _dict_value(item)
     _reject_legacy_filters(raw, f"retrieval_units[{index}]")
-    retrievers = tuple(str(value) for value in raw.get("retrievers") or ("hybrid",))
+    provider = str(raw.get("provider") or "")
+    retrievers = tuple(str(value) for value in raw.get("retrievers") or ())
+    if len(retrievers) > 1:
+        raise ValueError(
+            "compound_unit_must_be_split: compound providers like [sql, hybrid] "
+            "are forbidden. Split this into separate single-purpose unit_proposals."
+        )
+    if not provider and retrievers:
+        provider = retrievers[0]
+    if not provider:
+        provider = "hybrid"
     return RetrievalUnit(
         unit_id=str(raw.get("unit_id") or f"u{index}"),
         purpose=str(raw.get("purpose") or "llm_generated"),
         text=str(raw.get("text") or ""),
-        retrievers=retrievers,  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
         metadata_filter=_dict_value(raw.get("metadata_filter")),
         must_have_terms=tuple(str(value) for value in raw.get("must_have_terms") or ()),
         should_terms=tuple(str(value) for value in raw.get("should_terms") or ()),
@@ -206,7 +220,7 @@ def _retrieval_unit_from_raw(item: Any, index: int) -> RetrievalUnit:
     )
 
 
-def _llm_plan_schema(enabled_providers: tuple[str, ...]) -> dict[str, Any]:
+def _llm_plan_schema(known_providers: tuple[str, ...]) -> dict[str, Any]:
     return {
         "type": "object",
         "additionalProperties": False,
@@ -240,7 +254,7 @@ def _llm_plan_schema(enabled_providers: tuple[str, ...]) -> dict[str, Any]:
             },
             "retrieval_units": {
                 "type": "array",
-                "items": _retrieval_unit_schema(enabled_providers),
+                "items": _retrieval_unit_schema(known_providers),
             },
         },
         "required": [
@@ -297,16 +311,9 @@ def _metric_schema() -> dict[str, Any]:
     }
 
 
-def _retrieval_unit_schema(enabled_providers: tuple[str, ...]) -> dict[str, Any]:
-    enabled_providers = _normalize_provider_names(enabled_providers)
+def _retrieval_unit_schema(known_providers: tuple[str, ...]) -> dict[str, Any]:
+    known_providers = _normalize_provider_names(known_providers)
     string_array = {"type": "array", "items": {"type": "string"}}
-    retriever_array = {
-        "type": "array",
-        "items": {
-            "type": "string",
-            "enum": list(enabled_providers),
-        },
-    }
     return {
         "type": "object",
         "additionalProperties": False,
@@ -314,7 +321,10 @@ def _retrieval_unit_schema(enabled_providers: tuple[str, ...]) -> dict[str, Any]
             "unit_id": {"type": "string"},
             "purpose": {"type": "string"},
             "text": {"type": "string"},
-            "retrievers": retriever_array,
+            "provider": {
+                "type": "string",
+                "enum": list(known_providers),
+            },
             "metadata_filter": {
                 "type": "object",
                 "additionalProperties": True,
@@ -328,7 +338,7 @@ def _retrieval_unit_schema(enabled_providers: tuple[str, ...]) -> dict[str, Any]
             "unit_id",
             "purpose",
             "text",
-            "retrievers",
+            "provider",
             "metadata_filter",
             "must_have_terms",
             "should_terms",
@@ -343,19 +353,6 @@ def _ontology_excerpt(ontology: FinanceMetricOntology) -> str:
     for metric in list(ontology.metrics.values())[:24]:
         rows.append(f"- {metric.canonical_name}: {', '.join(metric.aliases[:8])}")
     return "\n".join(rows)
-
-
-def _extract_output_text(response: Any) -> str:
-    output_text = getattr(response, "output_text", None)
-    if output_text:
-        return str(output_text)
-    parts: list[str] = []
-    for item in getattr(response, "output", []) or []:
-        for content in getattr(item, "content", []) or []:
-            text = getattr(content, "text", None)
-            if text:
-                parts.append(str(text))
-    return "\n".join(parts).strip()
 
 
 def _parse_json_object(raw_output: str) -> dict[str, Any]:
@@ -374,8 +371,8 @@ def _parse_json_object(raw_output: str) -> dict[str, Any]:
     return value
 
 
-def _enabled_provider_names(settings: Settings) -> tuple[str, ...]:
-    return _normalize_provider_names(enabled_query_providers(settings))
+def _known_provider_names(settings: Settings) -> tuple[str, ...]:
+    return _normalize_provider_names(known_query_providers(settings))
 
 
 def _normalize_provider_names(values: tuple[str, ...]) -> tuple[str, ...]:

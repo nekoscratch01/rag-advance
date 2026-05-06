@@ -22,7 +22,7 @@ def test_query_plan_compiles_to_retrieval_tasks() -> None:
                 unit_id="u0",
                 purpose="original",
                 text="3M FY2018 capital expenditure",
-                retrievers=("hybrid",),
+                provider="hybrid",
                 metadata_filter={"document_ids": ["doc_1"]},
                 must_have_terms=("2018",),
                 weight=1.2,
@@ -96,7 +96,7 @@ def test_sql_provider_task_is_represented_but_skipped() -> None:
                 unit_id="u0",
                 purpose="structured_lookup",
                 text="3M FY2018 capex",
-                retrievers=("sql",),
+                provider="sql",
             ),
         ),
     )
@@ -104,8 +104,8 @@ def test_sql_provider_task_is_represented_but_skipped() -> None:
     task = tasks_from_plan(plan)[0]
 
     assert task.provider == "sql"
-    assert task.provider_status == "skipped"
-    assert task.unsupported_reason == "provider_not_supported_in_v1_live_retrieval:sql"
+    assert task.provider_status == "skipped_non_executable"
+    assert task.unsupported_reason == "provider_not_executable_in_v1:sql"
     assert task.internal_lanes == ()
 
 

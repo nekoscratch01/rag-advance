@@ -6,7 +6,7 @@ from typing import Any
 
 from atlas.query_orchestrator.company_aliases import KNOWN_COMPANY_ALIASES
 from atlas.query_orchestrator.ontology import FinanceMetricOntology
-from atlas.query_orchestrator.schema import QueryPlan
+from atlas.query_orchestrator.schema import KNOWN_PROVIDERS, QueryPlan
 
 
 @dataclass(frozen=True)
@@ -22,10 +22,10 @@ class QueryPlanValidator:
         self,
         ontology: FinanceMetricOntology,
         *,
-        enabled_providers: tuple[str, ...] = ("hybrid",),
+        known_providers: tuple[str, ...] = KNOWN_PROVIDERS,
     ) -> None:
         self.ontology = ontology
-        self.enabled_providers = enabled_providers
+        self.known_providers = known_providers
 
     def validate(self, plan: QueryPlan) -> PlanValidation:
         reasons: list[str] = []
@@ -55,14 +55,9 @@ class QueryPlanValidator:
             reasons.append("too_many_retrieval_units")
 
         for unit in plan.retrieval_units:
-            if len(unit.retrievers) != 1:
-                reasons.append(
-                    "compound_unit_must_be_split:"
-                    f"{unit.unit_id}:Split this into separate single-purpose unit_proposals"
-                )
-            provider = unit.retrievers[0] if unit.retrievers else "<missing>"
-            if provider not in self.enabled_providers:
-                reasons.append(f"provider_not_enabled:{unit.unit_id}:{provider}")
+            provider = unit.provider
+            if provider not in self.known_providers:
+                reasons.append(f"unknown_provider:{unit.unit_id}:{provider}")
             if provider == "hybrid" and unit.purpose in {"hyde", "query2doc"}:
                 reasons.append(f"hyde_not_allowed_for_hybrid_sparse:{unit.unit_id}")
             if unit.must_have_terms and not any(

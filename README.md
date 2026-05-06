@@ -1,12 +1,13 @@
-# Atlas V0.0 / V0.1
+# Atlas Evidence Kernel
 
-Atlas V0 是一个 API-first 的证据优先 RAG 内核。它做一条可追踪、可引用、可评估的 RAG 闭环：
+Atlas 当前主线是 V1 Evidence Kernel：一个 API-first、证据优先、可追踪、可评估的 RAG 内核。V1 的 runtime 已收口到 Hybrid Provider 主路径，并把 query plan、retrieval task、provider result、evidence、answer 和 citation trace 串成一条闭环：
 
 ```text
 PDF / Markdown / TXT
   -> 本地 BGE embedding
   -> Postgres + Qdrant
-  -> FastAPI 查询
+  -> FastAPI 查询 / ProviderRouter
+  -> TextHybridProvider 混合检索
   -> gpt-5-nano 基于 evidence 生成答案
   -> citations + trace_id
 ```
@@ -65,7 +66,7 @@ curl -s http://localhost:8000/v1/documents/ingest \
 `samples,corpus`。真实知识库文档建议放进 `corpus/`，不要把任意本机路径暴露给
 API。
 
-V0 支持：
+当前导入器支持：
 
 ```text
 PDF
@@ -82,7 +83,7 @@ citations 和 trace。
 curl -s http://localhost:8000/v1/query \
   -H 'Content-Type: application/json' \
   -d '{
-    "query": "Atlas V0.0 的目标是什么？",
+    "query": "历史 V0.0 baseline 的目标是什么？",
     "top_k": 8
   }' | python -m json.tool
 ```
@@ -99,7 +100,7 @@ trace_id
 Citation 只来自模型答案里实际写出的 `[c1]`、`[c2]` marker。系统不会在模型漏写
 marker 时自动把 top-k evidence 补成 citations。
 
-V0.0 默认对 GPT-5 nano 使用 `reasoning.effort=low`。这是为了避免默认 reasoning
+V1 默认对 GPT-5 nano 使用 `reasoning.effort=low`。这是为了避免默认 reasoning
 消耗过多 `max_output_tokens`，同时比 `minimal` 更稳一点。
 
 查看 query trace：
@@ -150,7 +151,9 @@ latency      query 和 generation 的 avg/min/max
 python -m atlas.eval.runner --base-url http://localhost:8000 --cases evals/smoke_cases.yaml
 ```
 
-正式 V0 eval case 文件：
+`evals/smoke_cases.yaml` 使用的是 sample corpus 里的历史 V0.0 baseline 文档，用来检查本地闭环是否跑通，不代表当前 V1 能力上限。
+
+历史 V0 baseline 完整 eval case 文件：
 
 ```bash
 python -m atlas.eval.runner --base-url http://localhost:8000 --cases evals/v0_cases.yaml
@@ -167,7 +170,7 @@ Total input/output tokens
 Top failures
 ```
 
-V0.1 的 eval 仍然是 smoke eval，不是完整 faithfulness judge。它的目的主要是确认
+Smoke eval 不是完整 faithfulness judge。它的目的主要是确认
 每次改动后，检索、引用、confidence 和生成成本没有明显退化。
 
 ## Eval API
@@ -220,6 +223,13 @@ retrieval_events   query 召回了哪些 chunk
 generation_events  LLM 调用、token、latency、status
 eval_runs          eval 任务汇总
 eval_results       eval 单 case 结果
+query_plans        V1 semantic query plan
+retrieval_tasks    V1 task compiler 输出
+retrieval_results  V1 provider router / retrieval trace payload
+candidates         V1 candidate trace
+evidence_blocks    V1 evidence block trace
+evidence_packs     V1 evidence pack trace
+citations          V1 citation payload
 ```
 
 常用 SQL：
@@ -353,7 +363,7 @@ retrieval-only benchmark 会输出到：
 benchmarks/rag_quality/financebench/retrieval_runs/<run_id>/
 ```
 
-## V0.1 验收流程
+## 本地验收流程
 
 ```text
 1. docker compose up -d
@@ -363,7 +373,7 @@ benchmarks/rag_quality/financebench/retrieval_runs/<run_id>/
 5. POST /v1/query 返回 answer、confidence、citations、trace_id
 6. GET /v1/query/{query_id}/trace 能看到 retrieval 和 generation
 7. GET /v1/observability/summary 能看到系统摘要
-8. DBeaver 能看到 query_runs、retrieval_events、generation_events
+8. DBeaver 能看到 query_runs、retrieval_events、generation_events 和 V1 trace family 表
 9. python -m atlas.eval.runner 输出 smoke eval report
 ```
 
@@ -395,12 +405,14 @@ curl -s http://localhost:8000/v1/admin/reset-dev-data \
 
 本地 BGE embedding 不会把文档发给云端 embedding 服务。但查询时，被检索出来并进入
 `ATLAS_MAX_CONTEXT_TOKENS` 预算内的 evidence 会发送给 OpenAI，用于 `gpt-5-nano`
-生成答案。V0.0 只应该导入允许发送给 OpenAI 的样本文档或非敏感文档。
+生成答案。因此只应该导入允许发送给 OpenAI 的样本文档或非敏感文档。
 
 `ATLAS_DOCUMENT_ROOTS` 是本地文件读取边界。默认只允许导入 `samples/` 和
 `corpus/` 下的 PDF、Markdown、TXT。
 
-## V0 baseline 不做
+## 历史 V0 baseline 不做
+
+下面是历史 V0 baseline 的边界，不代表当前 V1 已实现能力：
 
 ```text
 前端

@@ -1,6 +1,6 @@
 cases:
   - id: smoke_001
-    question: "Atlas V0.0 的目标是什么？"
+    question: "历史 V0.0 baseline 的目标是什么？"
     expected_confidence: supported
     expected_sources:
       - "demo_knowledge.md"
@@ -10,7 +10,7 @@ cases:
       - "trace_id"
 
   - id: smoke_002
-    question: "V0.0 明确不做哪些事情？"
+    question: "历史 V0.0 baseline 明确不做哪些事情？"
     expected_confidence: supported
     expected_sources:
       - "demo_knowledge.md"
@@ -20,7 +20,7 @@ cases:
       - "GraphRAG"
 
   - id: smoke_003
-    question: "Postgres 和 Qdrant 在 V0.0 中分别承担什么职责？"
+    question: "Postgres 和 Qdrant 在历史 V0.0 baseline 中分别承担什么职责？"
     expected_confidence: supported
     expected_sources:
       - "atlas_notes.txt"
@@ -39,9 +39,8 @@ cases:
       - "不应该"
 
   - id: smoke_005
-    question: "Atlas V0.0 支持 Kubernetes 自动扩容吗？"
+    question: "历史 V0.0 baseline 支持 Kubernetes 自动扩容吗？"
     expected_confidence: insufficient
-    expected_sources:
-      - "demo_knowledge.md"
+    expected_sources: []
     expected_keywords:
       - "证据不足"

@@ -32,16 +32,23 @@ class RetrievalTask:
         unit: RetrievalUnit,
         *,
         task_id: str | None = None,
+        executable_providers: tuple[str, ...] = ("hybrid",),
     ) -> RetrievalTask:
         metadata = dict(getattr(unit, "metadata", {}) or {})
         provider = _unit_provider(unit)
         internal_lanes = _internal_lanes(unit)
-        provider_status = _provider_status(unit, metadata=metadata, provider=provider)
+        provider_status = _provider_status(
+            unit,
+            metadata=metadata,
+            provider=provider,
+            executable_providers=executable_providers,
+        )
         unsupported_reason = _unsupported_reason(
             unit,
             metadata=metadata,
             provider=provider,
             provider_status=provider_status,
+            executable_providers=executable_providers,
         )
         return cls(
             task_id=task_id or new_id("rt"),
@@ -60,7 +67,7 @@ class RetrievalTask:
             internal_lanes=internal_lanes,
             metadata={
                 **metadata,
-                "provider_retrievers": list(getattr(unit, "retrievers", ()) or ()),
+                "legacy_retrievers": list(getattr(unit, "retrievers", ()) or ()),
             },
         )
 
@@ -69,8 +76,19 @@ class RetrievalTask:
         return self.internal_lanes
 
 
-def tasks_from_plan(plan: QueryPlan) -> list[RetrievalTask]:
-    return [RetrievalTask.from_unit(plan, unit) for unit in plan.retrieval_units]
+def tasks_from_plan(
+    plan: QueryPlan,
+    *,
+    executable_providers: tuple[str, ...] = ("hybrid",),
+) -> list[RetrievalTask]:
+    return [
+        RetrievalTask.from_unit(
+            plan,
+            unit,
+            executable_providers=executable_providers,
+        )
+        for unit in plan.retrieval_units
+    ]
 
 
 def serialize_retrieval_task(task: RetrievalTask) -> dict[str, Any]:
@@ -123,9 +141,6 @@ def _unit_provider(unit: RetrievalUnit) -> str:
     provider = getattr(unit, "provider", None)
     if provider:
         return str(provider)
-    retrievers = tuple(getattr(unit, "retrievers", ()) or ())
-    if retrievers:
-        return str(retrievers[0])
     return "hybrid"
 
 
@@ -145,9 +160,10 @@ def _provider_status(
     *,
     metadata: dict[str, Any],
     provider: str,
+    executable_providers: tuple[str, ...],
 ) -> str:
-    if provider != "hybrid":
-        return "skipped"
+    if provider not in executable_providers:
+        return "skipped_non_executable"
     value = getattr(unit, "provider_status", None) or metadata.get("provider_status")
     if value:
         return str(value)
@@ -160,9 +176,10 @@ def _unsupported_reason(
     metadata: dict[str, Any],
     provider: str,
     provider_status: str,
+    executable_providers: tuple[str, ...],
 ) -> str | None:
-    if provider != "hybrid":
-        return f"provider_not_supported_in_v1_live_retrieval:{provider}"
+    if provider not in executable_providers:
+        return f"provider_not_executable_in_v1:{provider}"
     value = getattr(unit, "unsupported_reason", None) or metadata.get("unsupported_reason")
     if value:
         return str(value)

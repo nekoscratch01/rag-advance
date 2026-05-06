@@ -4,6 +4,9 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid",)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -26,8 +29,8 @@ class Settings(BaseSettings):
     embedding_dim: int = 512
     embedding_batch_size: int = 16
 
-    retrieval_mode: str = "dense"
-    bm25_enabled: bool = False
+    retrieval_mode: str = "hybrid"
+    bm25_enabled: bool = True
     bm25_model: str = "Qdrant/bm25"
     bm25_language: str = "english"
     bm25_k: float = 1.2
@@ -52,10 +55,13 @@ class Settings(BaseSettings):
     query_planner_version: str = "query_planner_v1"
     finance_metric_ontology_path: str = "configs/finance_metric_ontology.yaml"
     query_planner_max_units: int = 6
+    query_planner_known_providers: str = "hybrid,sql,graph"
+    query_runtime_executable_providers: str = "hybrid"
+    # Deprecated: retained only so older .env files do not fail settings parsing.
     query_planner_enabled_providers: str = "hybrid"
     query_planner_retry_count: int = 2
 
-    prompt_version: str = "v0.0-rag-answer-2026-05-03"
+    prompt_version: str = "v1-evidence-answer-2026-05-06"
     default_top_k: int = 8
     max_top_k: int = 12
     max_context_tokens: int = 6000
@@ -82,6 +88,30 @@ def bm25_sparse_enabled(settings: Settings) -> bool:
 
 
 def enabled_query_providers(settings: Settings) -> tuple[str, ...]:
+    """Deprecated compatibility alias for executable runtime providers."""
+    return executable_query_providers(settings)
+
+
+def known_query_providers(settings: Settings) -> tuple[str, ...]:
+    providers = _provider_list(settings.query_planner_known_providers)
+    return providers or ("hybrid", "sql", "graph")
+
+
+def executable_query_providers(settings: Settings) -> tuple[str, ...]:
+    requested = _provider_list(settings.query_runtime_executable_providers)
+    return tuple(provider for provider in requested if provider in IMPLEMENTED_RUNTIME_PROVIDERS)
+
+
+def _provider_list(value: str) -> tuple[str, ...]:
+    return tuple(
+        provider.strip().lower()
+        for provider in value.split(",")
+        if provider.strip()
+    )
+
+
+def legacy_enabled_query_providers(settings: Settings) -> tuple[str, ...]:
+    """Deprecated parser for older ATLAS_QUERY_PLANNER_ENABLED_PROVIDERS env files."""
     providers = tuple(
         provider.strip().lower()
         for provider in settings.query_planner_enabled_providers.split(",")

@@ -4,6 +4,7 @@ from pathlib import Path
 from pydantic import SecretStr
 
 from atlas.core.config import Settings
+from atlas.llm.clients.base import LLMResponse
 from atlas.query_orchestrator.ontology import FinanceMetricOntology
 from atlas.query_orchestrator.llm_planner import LLMQueryPlanner
 from atlas.query_orchestrator.schema import Entity, Metric, Period, QueryPlan, RetrievalUnit
@@ -216,9 +217,9 @@ def test_validator_rejects_retrieval_unit_with_untriggered_metric_alias() -> Non
     assert "ungrounded_metric_alias:u0:cash and cash equivalents" in validation.reasons
 
 
-def test_validator_rejects_disabled_sql_or_graph_provider() -> None:
+def test_validator_accepts_known_non_executable_sql_or_graph_provider() -> None:
     ontology = FinanceMetricOntology.load(ONTOLOGY_PATH)
-    validator = QueryPlanValidator(ontology, enabled_providers=("hybrid",))
+    validator = QueryPlanValidator(ontology, known_providers=("hybrid", "sql", "graph"))
     plan = QueryPlan(
         plan_id="plan_sql",
         original_query="Compare Apple and Microsoft 2023 R&D.",
@@ -227,15 +228,14 @@ def test_validator_rejects_disabled_sql_or_graph_provider() -> None:
                 unit_id="u_sql",
                 purpose="numerical_aggregation",
                 text="Apple Microsoft R&D 2023",
-                retrievers=("sql",),
+                provider="sql",
             ),
         ),
     )
 
     validation = validator.validate(plan)
 
-    assert validation.ok is False
-    assert "provider_not_enabled:u_sql:sql" in validation.reasons
+    assert validation.ok is True
 
 
 def test_llm_planner_rejects_unknown_raw_metric_before_validation() -> None:
@@ -258,7 +258,7 @@ def test_llm_planner_rejects_unknown_raw_metric_before_validation() -> None:
                 "unit_id": "u0",
                 "purpose": "original",
                 "text": "What is the FY2018 capital expenditure amount for 3M?",
-                "retrievers": ["hybrid"],
+                "provider": "hybrid",
                 "metadata_filter": {},
                 "must_have_terms": [],
                 "should_terms": [],
@@ -298,7 +298,7 @@ def test_llm_planner_rejects_blank_metric_with_unknown_source_text() -> None:
                 "unit_id": "u0",
                 "purpose": "original",
                 "text": "What was 3M revenue in FY2018?",
-                "retrievers": ["hybrid"],
+                "provider": "hybrid",
                 "metadata_filter": {},
                 "must_have_terms": [],
                 "should_terms": [],
@@ -347,31 +347,72 @@ def test_llm_planner_retries_with_validation_feedback(monkeypatch) -> None:
             }
         ],
     }
-    created_clients = []
-
-    class _FakeOpenAI:
-        def __init__(self, **_kwargs) -> None:
+    class _FakeClient:
+        def __init__(self) -> None:
             self.responses = _FakeResponses([invalid_payload, valid_payload])
-            created_clients.append(self)
 
-    monkeypatch.setattr("atlas.query_orchestrator.llm_planner.OpenAI", _FakeOpenAI)
+        def create_response(self, request):
+            response = self.responses.create(**request)
+            return LLMResponse(output_text=response.output_text, raw=response)
+
+    fake_client = _FakeClient()
+    settings = Settings(
+        openai_api_key=SecretStr("test-key"),
+        finance_metric_ontology_path=str(ONTOLOGY_PATH),
+    )
+    ontology = FinanceMetricOntology.load(ONTOLOGY_PATH)
+    planner = LLMQueryPlanner(settings=settings, ontology=ontology, client=fake_client)
+
+    plan = planner.plan("What was 3M revenue in FY2018?")
+
+    calls = fake_client.responses.calls
+    provider_enum = calls[0]["text"]["format"]["schema"]["properties"]["retrieval_units"][
+        "items"
+    ]["properties"]["provider"]["enum"]
+    assert plan.retrieval_units[0].provider == "hybrid"
+    assert provider_enum == ["hybrid", "sql", "graph"]
+    assert "Known retrieval providers" in calls[0]["instructions"]
+    assert "Executable providers in the current V1 runtime: [hybrid]" in calls[0]["instructions"]
+    assert "Do not disguise sql or graph intent as hybrid" in calls[0]["instructions"]
+    assert len(calls) == 2
+    assert "filters is not supported" in calls[1]["input"]
+
+
+def test_llm_planner_rejects_legacy_compound_retrievers_raw_payload() -> None:
     settings = Settings(
         openai_api_key=SecretStr("test-key"),
         finance_metric_ontology_path=str(ONTOLOGY_PATH),
     )
     ontology = FinanceMetricOntology.load(ONTOLOGY_PATH)
     planner = LLMQueryPlanner(settings=settings, ontology=ontology)
+    raw = {
+        "standalone_query": "What was Apple's 2023 R&D expense and why?",
+        "query_type": "financial_numeric_fact",
+        "entities": [],
+        "periods": [],
+        "metrics": [],
+        "metadata_filter": {},
+        "retrieval_units": [
+            {
+                "unit_id": "u0",
+                "purpose": "compound",
+                "text": "Apple R&D 2023 explanation",
+                "retrievers": ["sql", "hybrid"],
+                "metadata_filter": {},
+                "must_have_terms": [],
+                "should_terms": [],
+                "top_k": 10,
+                "weight": 1.0,
+            }
+        ],
+    }
 
-    plan = planner.plan("What was 3M revenue in FY2018?")
-
-    calls = created_clients[0].responses.calls
-    retriever_enum = calls[0]["text"]["format"]["schema"]["properties"]["retrieval_units"][
-        "items"
-    ]["properties"]["retrievers"]["items"]["enum"]
-    assert plan.retrieval_units[0].retrievers == ("hybrid",)
-    assert retriever_enum == ["hybrid"]
-    assert len(calls) == 2
-    assert "filters is not supported" in calls[1]["input"]
+    try:
+        planner._plan_from_raw(raw["standalone_query"], raw)
+    except ValueError as exc:
+        assert "compound_unit_must_be_split" in str(exc)
+    else:
+        raise AssertionError("expected compound legacy retrievers to be rejected")
 
 
 def test_ontology_does_not_match_cash_inside_operating_cash_flow() -> None:

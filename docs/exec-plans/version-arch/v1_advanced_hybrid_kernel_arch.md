@@ -18,7 +18,7 @@ GraphProvider：未实现。
 
 ## 1. Runtime 总览
 
-V1 是单次问答的 hybrid-only Evidence Kernel：
+V1 是单次问答的 hybrid-executable Evidence Kernel：
 
 ```text
 POST /v1/query
@@ -81,15 +81,18 @@ FinanceBench JSONL 是冻结测评产物，不是 runtime 存储。
 
 ```text
 src/atlas/core/config.py
-  Settings.query_planner_enabled_providers = "hybrid"
-  enabled_query_providers(settings)
+  Settings.query_planner_known_providers = "hybrid,sql,graph"
+  Settings.query_runtime_executable_providers = "hybrid"
+  known_query_providers(settings)
+  executable_query_providers(settings)
 ```
 
 依赖装配：
 
 ```text
 src/atlas/api/dependencies.py
-  get_retriever() -> TextHybridProvider
+  get_text_hybrid_provider() -> TextHybridProvider
+  get_provider_router() -> ProviderRouter({"hybrid": TextHybridProvider})
 ```
 
 V1 的 `QueryPlan` 可以保留最终 provider vocabulary：
@@ -98,7 +101,13 @@ V1 的 `QueryPlan` 可以保留最终 provider vocabulary：
 ProviderName = Literal["hybrid", "sql", "graph"]
 ```
 
-但当前 executable plan 只能使用：
+当前 semantic plan 可以使用：
+
+```text
+provider = "hybrid" | "sql" | "graph"
+```
+
+当前 V1 execution 只能执行：
 
 ```text
 provider = "hybrid"
@@ -107,7 +116,8 @@ provider = "hybrid"
 如果本地代码仍看到 `retrievers` 字段，应按 provider 语义解释：
 
 ```text
-retrievers = ["hybrid"]
+retrievers = ["hybrid"]  # legacy input alias
+provider = "hybrid"      # canonical field
 ```
 
 `dense`、`bm25`、`table`、`metric_alias`、`section` 是 `TextHybridProvider` 内部 lane，不是顶层 provider。
@@ -200,25 +210,28 @@ build_fallback_plan(...)
 
 ```text
 schema 知道 hybrid / sql / graph。
-runtime 只装配 TextHybridProvider。
-如果 prompt 让 LLM 自由选择 provider，LLM 会为 SQL-like 或 graph-like query 输出 sql / graph。
-这些 provider 在 V1 不可执行。
+runtime 通过 ProviderRouter 只注册 TextHybridProvider。
+如果 LLM 为 SQL-like 或 graph-like query 输出 sql / graph，这是合法 semantic plan。
+这些 provider 在 V1 不可执行，会生成 skipped_non_executable ProviderResult。
 ```
 
 V1 架构要求：
 
 ```text
-prompt 必须动态注入 enabled_providers。
-V1 enabled_providers 必须是 ["hybrid"]。
-disabled provider 必须在 prompt 中标注为不可输出。
+prompt 必须声明 known_providers = ["hybrid", "sql", "graph"]。
+runtime 必须声明 executable_providers = ["hybrid"]。
+non-executable provider 必须进入 trace，不进入 evidence。
+默认不自动 hybrid_backfill。
 ```
 
 代码锚点：
 
 ```text
 src/atlas/core/config.py
-  enabled_query_providers(settings)
-  Settings.query_planner_enabled_providers
+  known_query_providers(settings)
+  executable_query_providers(settings)
+  Settings.query_planner_known_providers
+  Settings.query_runtime_executable_providers
   Settings.query_planner_retry_count
 
 src/atlas/query_orchestrator/prompts.py
@@ -229,9 +242,10 @@ src/atlas/query_orchestrator/prompts.py
 当前实现：
 
 ```text
-prompts.py 会把 enabled_query_providers(settings) 注入 planner instructions。
-llm_planner.py 会按 enabled_providers 收窄 schema enum。
+prompts.py 会把 known_query_providers(settings) 注入 planner instructions。
+llm_planner.py 会按 known_providers 生成 schema enum。
 validation 失败会把错误反馈给 LLM 重试。
+ProviderRouter 会把 sql/graph 编译为 skipped_non_executable provider result。
 ```
 
 ### 4.2 Compound Unit Retry
@@ -242,24 +256,25 @@ validation 失败会把错误反馈给 LLM 重试。
 
 ```yaml
 retrieval_units:
-  - unit_id: u1
+  - unit_id: u3
     provider: [sql, hybrid]
 ```
 
 V1 正确处理：
 
 ```text
-1. validator 报 compound_unit_must_be_split 或 disabled_provider。
+1. validator 报 compound_unit_must_be_split。
 2. LLM planner 带错误原因重试。
-3. 重试 prompt 要求只输出 enabled_providers 里的 single-provider units。
-4. retry 次数耗尽后，fallback 到 deterministic hybrid-only plan。
+3. 重试 prompt 要求输出 single-provider units。
+4. sql/graph 是 known provider；它们是 valid plan、non-executable execution。
 ```
 
 代码锚点：
 
 ```text
 src/atlas/query_orchestrator/schema.py
-  RetrievalUnit._retrievers_single_provider(...)
+  RetrievalUnit.provider
+  RetrievalUnit.retrievers legacy alias
 
 src/atlas/core/config.py
   Settings.query_planner_retry_count
@@ -268,7 +283,7 @@ src/atlas/core/config.py
 TODO：
 
 ```text
-把 disabled_provider retry reason 和 retry_count 写入 query_plans / trace payload。
+把 unknown_provider retry reason 和 retry_count 写入 query_plans / trace payload。
 继续用测试锁住 fallback.py 不输出 sql / graph。
 ```
 
@@ -587,7 +602,7 @@ graph node / edge / community summary -> VIP EvidenceBlock -> answer
 5. 没有 source anchor 的 graph claim 不能作为 citation。
 ```
 
-AAPL/MSFT/Vision Pro 这类 query 在 V1 必须走 hybrid-only path，不能声称执行了 graph traversal。
+AAPL/MSFT/Vision Pro 这类 query 的 semantic plan 可以包含 graph/sql 意图；V1 execution 只执行 hybrid，不能声称执行了 graph traversal。
 
 ---
 
@@ -751,9 +766,9 @@ V1 trace family：
 
 | 表 | payload 重点 |
 |---|---|
-| `query_plans` | `plan_id`、`planner`、`enabled_providers`、`retrieval_units`、`metadata_filter` |
+| `query_plans` | `plan_id`、`planner`、`known_providers`、`executable_providers`、`retrieval_units`、`metadata_filter` |
 | `retrieval_tasks` | `task_id`、`unit_id`、`provider`、`query_text`、`metadata_filter`、`provider_status`、`internal_lanes` |
-| `retrieval_results` | `retrieval_trace`、stage status、retrieval events |
+| `retrieval_results` | `provider_router_trace`、`provider_results`、`retrieval_trace`、stage status、retrieval events |
 | `candidates` | `chunk_id`、rank、lane trace、fusion trace、reranker trace |
 | `evidence_blocks` | selected evidence text、page、coverage、provider metadata |
 | `evidence_packs` | token budget、included/dropped blocks、drop reason |
@@ -767,6 +782,8 @@ V1 trace family：
 ```text
 result.details.query_plan
 result.details.retrieval_tasks
+result.details.provider_router_trace
+result.details.provider_results
 result.details.retrieval_trace
 result.details.critic.evidence_evaluation
 result.details.critic.citation_verification
@@ -777,7 +794,7 @@ v1_trace.candidates[].payload.metadata.lane_attributions
 TODO：
 
 ```text
-把 enabled_providers 和 disabled_provider retry reason 写入 query_plans payload。
+把 source_anchor 进一步持久化到 candidates/evidence_blocks payload。
 把 metadata_filter -> qdrant_filter 编译结果写入 retrieval_tasks 或 retrieval_results payload。
 ```
 
@@ -824,14 +841,14 @@ cache hit/miss
 新增专项 TODO：
 
 ```text
-1. planner_disabled_provider_rate
+1. planner_unknown_provider_rate
 2. compound_unit_retry_success_rate
 3. metadata_filter_hit_rate
 4. must_have_terms off/on ablation
 5. sparse_text = unit.text vs unit.text + should_terms vs must_terms sparse boost ablation
 6. Python Weighted RRF vs Qdrant RRF ablation
 7. serialized table textual lane off/on ablation
-8. AAPL/MSFT/Vision Pro hybrid-only regression case
+8. AAPL/MSFT/Vision Pro semantic-provider / hybrid-execution regression case
 ```
 
 ---
@@ -856,23 +873,35 @@ cell provenance lookup
 V1 应执行：
 
 ```text
-1. QueryOrchestrator 读取 enabled_providers = ["hybrid"]。
-2. Planner 生成 hybrid-only retrieval_units。
+1. QueryOrchestrator 读取 known_providers = ["hybrid", "sql", "graph"]。
+2. Planner 生成 semantic retrieval_units，可包含 hybrid/sql/graph。
 3. RetrievalTask 编译 metadata_filter，例如 filing_type / document_ids。
-4. TextHybridProvider 对每个 unit 执行 dense_text = unit.text。
-5. TextHybridProvider 对每个 unit 执行 sparse_text = unit.text + should_terms + repeat(must_have_terms, 3)。
-6. Qdrant dense / sparse 分别召回 source chunks。
-7. Weighted RRF 合并候选。
-8. Reranker 精排。
-9. Evidence Builder 扩展到 parent/page blocks。
-10. Answer Generator 基于 annual report source evidence 做保守比较。
+4. ProviderRouter 只执行 executable provider = ["hybrid"]。
+5. sql/graph tasks 写入 skipped_non_executable ProviderResult。
+6. TextHybridProvider 对 hybrid unit 执行 dense_text = unit.text。
+7. TextHybridProvider 对 hybrid unit 执行 sparse_text = unit.text + should_terms + repeat(must_have_terms, 3)。
+8. Qdrant dense / sparse 分别召回 source chunks。
+9. Weighted RRF 合并候选。
+10. Reranker 精排。
+11. Evidence Builder 扩展到 parent/page blocks。
+12. Answer Generator 基于 successful ProviderResult 的 source evidence 做保守比较。
 ```
 
-示例 hybrid units：
+示例 semantic units：
 
 ```yaml
 retrieval_units:
   - unit_id: u0
+    provider: graph
+    purpose: product_relationship_discovery
+    text: "AAPL MSFT Vision Pro product ecosystem relationships"
+
+  - unit_id: u1
+    provider: sql
+    purpose: structured_exposure_count
+    text: "count AAPL MSFT annual report mentions of Vision Pro or mixed reality"
+
+  - unit_id: u2
     provider: hybrid
     purpose: original
     text: "AAPL MSFT Vision Pro annual report exposure"
@@ -884,7 +913,7 @@ retrieval_units:
     metadata_filter:
       filing_type: ["10-K"]
 
-  - unit_id: u1
+  - unit_id: u3
     provider: hybrid
     purpose: apple_source_text
     text: "Apple AAPL Vision Pro annual report product discussion"
@@ -893,7 +922,7 @@ retrieval_units:
       - products
       - services
 
-  - unit_id: u2
+  - unit_id: u4
     provider: hybrid
     purpose: microsoft_source_text
     text: "Microsoft MSFT Vision Pro annual report product partnership discussion"
@@ -919,11 +948,13 @@ retrieval_units:
 | 架构节点 | 模块 | API | DB / payload | Eval |
 |---|---|---|---|---|
 | QueryRuntime | `query_runtime/service.py` | `POST /v1/query` | `query_runs`、`details_json` | total latency、confidence |
-| Query Orchestrator | `query_orchestrator/service.py` | `POST /v1/query/plan` | `query_plans.payload_json` | planner latency、disabled provider rate |
+| Query Orchestrator | `query_orchestrator/service.py` | `POST /v1/query/plan` | `query_plans.payload_json` | planner latency、unknown provider rate |
 | LLM Planner | `query_orchestrator/llm_planner.py` | plan API | `planner`、`model` metadata | retry/fallback rate |
-| Prompt Builder | `query_orchestrator/prompts.py` | plan API | enabled providers metadata | prompt compliance |
+| LLM Client Adapter | `llm/clients/` | planner / answer generator | model usage、raw provider metadata | provider error rate、latency |
+| Prompt Builder | `query_orchestrator/prompts.py` | plan API | known/executable providers metadata | prompt compliance |
 | Validator | `query_orchestrator/validator.py` | plan API | validation warnings/reasons | validation failure buckets |
 | RetrievalTask compiler | `retrieval/models/retrieval_task.py` | plan/retrieve/query | `retrieval_tasks.payload_json` | task count、unit coverage |
+| ProviderRouter | `retrieval/router.py` | retrieve/query | `provider_router_trace`、`provider_results` | skipped_non_executable rate |
 | TextHybridProvider | `retrieval/providers/text_hybrid/provider.py` | retrieve/query | `retrieval_results`、`candidates` | retrieval latency |
 | Lanes | `retrieval/providers/text_hybrid/lanes.py` | retrieve/query | `lane_trace`、`lane_attributions` | lane contribution |
 | Dense retriever | `retrieval/retrievers/dense.py` | retrieve/query | dense rank/score | dense hit@k |

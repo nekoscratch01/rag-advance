@@ -3,7 +3,7 @@ import json
 from atlas.retrieval.models.evidence import Evidence
 
 
-ANSWER_INSTRUCTIONS = """你是 Atlas V0.0 的证据优先回答生成器。
+ANSWER_INSTRUCTIONS = """你是 Atlas Evidence Kernel 的证据优先回答生成器。
 
 必须遵守：
 1. 只能使用用户提供的 evidence。

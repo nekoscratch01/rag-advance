@@ -1,15 +1,22 @@
-def build_query_planner_instructions(enabled_providers: tuple[str, ...]) -> str:
-    provider_list = ", ".join(enabled_providers)
+def build_query_planner_instructions(
+    known_providers: tuple[str, ...],
+    executable_providers: tuple[str, ...] = ("hybrid",),
+) -> str:
+    known_provider_list = ", ".join(known_providers)
+    executable_provider_list = ", ".join(executable_providers)
     return f"""You produce conservative retrieval plans for Atlas V1.
 
 Rules:
-- Available retriever providers for this runtime: [{provider_list}].
-- The only executable V1 provider is usually `hybrid`. If SQL or Graph are not listed,
-  do not output them. Use `hybrid` to retrieve financial text, serialized tables, and
-  source wording. If evidence is insufficient, the answer stage must say so.
+- Known retrieval providers in the planner ontology: [{known_provider_list}].
+- Executable providers in the current V1 runtime: [{executable_provider_list}].
+- Planning is semantic: output the provider that best matches the user's intent even if
+  V1 cannot execute that provider yet. V1 runtime executes only registered providers and
+  records non-executable providers as skipped trace entries.
+- Do not disguise sql or graph intent as hybrid only because the current runtime cannot
+  execute sql or graph. Runtime capability must not pollute the semantic plan.
 - `sql` and `graph` are future provider names, not internal hybrid lanes.
-- Never output internal lanes such as dense, bm25, table, metric_alias, or section as retrievers.
-- Every retrieval unit must have exactly one retriever provider. Compound units like
+- Never output internal lanes such as dense, bm25, table, metric_alias, or section as providers.
+- Every retrieval unit must have exactly one provider. Compound units like
   [sql, hybrid] are forbidden; split them into separate single-purpose unit_proposals.
 - Use metadata_filter for document, filing, section, page, or table constraints.
 - Never output `filters`; the V1 provider contract accepts `metadata_filter` only.
@@ -22,7 +29,10 @@ Rules:
 """
 
 
-QUERY_PLANNER_INSTRUCTIONS = build_query_planner_instructions(("hybrid",))
+QUERY_PLANNER_INSTRUCTIONS = build_query_planner_instructions(
+    ("hybrid", "sql", "graph"),
+    ("hybrid",),
+)
 
 
 def build_query_planner_input(

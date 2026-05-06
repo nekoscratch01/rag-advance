@@ -4,13 +4,13 @@ from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
 
-from atlas.core.config import Settings
+from atlas.core.config import Settings, executable_query_providers, known_query_providers
 from atlas.core.errors import AtlasError, ErrorCode
 from atlas.core.ids import new_id
 from atlas.db import repositories
 from atlas.ingestion.chunker import approx_token_count
 from atlas.llm.base import AnswerGenerator
-from atlas.query_orchestrator.schema import QueryPlan, serialize_query_plan
+from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit, serialize_query_plan
 from atlas.query_orchestrator.service import QueryOrchestrator
 from atlas.query_runtime.cache import CACHE_KEY_SCHEMA, QueryCacheStore, make_cache_key
 from atlas.query_runtime.citation_builder import build_citations
@@ -32,6 +32,8 @@ from atlas.retrieval.models.retrieval_task import (
     serialize_retrieval_task,
     tasks_from_plan,
 )
+from atlas.retrieval.contracts import ProviderRouterResult
+from atlas.retrieval.router import ProviderRouter, serialize_provider_result
 
 
 @dataclass(frozen=True)
@@ -61,12 +63,20 @@ class QueryRuntime:
         self,
         *,
         settings: Settings,
-        retriever: Retriever,
         generator: AnswerGenerator,
+        retriever: Retriever | None = None,
+        provider_router: ProviderRouter | None = None,
         orchestrator: QueryOrchestrator | None = None,
     ) -> None:
         self.settings = settings
         self.retriever = retriever
+        providers = {}
+        if retriever is not None and "hybrid" in executable_query_providers(settings):
+            providers["hybrid"] = retriever
+        self.provider_router = provider_router or ProviderRouter(
+            providers,
+            known_providers=known_query_providers(settings),
+        )
         self.generator = generator
         self.orchestrator = orchestrator
 
@@ -99,6 +109,7 @@ class QueryRuntime:
             self.orchestrator,
             normalized_query,
             runtime_options,
+            self.provider_router.executable_providers,
         )
         if query_plan is not None:
             runtime_options["query_plan"] = serialize_query_plan(query_plan)
@@ -167,10 +178,11 @@ class QueryRuntime:
 
         retrieval_events = []
         retrieval_latency_ms: int | None = None
+        router_result: ProviderRouterResult | None = None
         retrieval_started = time.perf_counter()
         try:
-            evidence = _retrieve_evidence(
-                self.retriever,
+            router_result = _retrieve_with_router(
+                self.provider_router,
                 db,
                 query=normalized_query,
                 top_k=effective_top_k,
@@ -179,6 +191,7 @@ class QueryRuntime:
                 query_plan=query_plan,
                 retrieval_tasks=retrieval_tasks,
             )
+            evidence = list(router_result.evidence)
             retrieval_latency_ms = int((time.perf_counter() - retrieval_started) * 1000)
             retrieval_events = make_retrieval_events(query_id=query_id, evidence=evidence)
         except AtlasError as exc:
@@ -222,7 +235,7 @@ class QueryRuntime:
         except Exception as exc:
             atlas_error = AtlasError(
                 ErrorCode.UPSTREAM_VECTOR_STORE_UNAVAILABLE,
-                "Dense retrieval failed.",
+                "Provider retrieval failed.",
                 status_code=502,
                 details={"type": exc.__class__.__name__},
                 trace_id=trace_id,
@@ -265,7 +278,7 @@ class QueryRuntime:
             raise atlas_error from exc
 
         if not evidence:
-            empty_pack_details = _retriever_pack_details(self.retriever)
+            empty_pack_details = _provider_router_details(router_result)
             latency_ms = int((time.perf_counter() - started) * 1000)
             answer = "当前导入的文档中没有检索到足够证据回答这个问题。"
             citations: list[dict] = []
@@ -343,6 +356,7 @@ class QueryRuntime:
                 extra={
                     **_critic_details(pre_critic=pre_critic, post_critic=None),
                     **_retrieval_trace_details(generation_evidence),
+                    **_provider_router_details(router_result),
                 },
             )
             _record_trace_metadata(
@@ -403,6 +417,7 @@ class QueryRuntime:
                 extra={
                     **_critic_details(pre_critic=pre_critic, post_critic=post_critic),
                     **_retrieval_trace_details(generation_evidence),
+                    **_provider_router_details(router_result),
                 },
             )
             confidence = _critic_confidence(
@@ -513,7 +528,17 @@ class QueryRuntime:
                 status="failed",
                 error_message=exc.error_message,
             )
-            _attach_query_details(query_run, {})
+            details = _runtime_details(
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
+                extra={
+                    **_critic_details(pre_critic=pre_critic, post_critic=None),
+                    **_retrieval_trace_details(generation_evidence),
+                    **_provider_router_details(router_result),
+                },
+            )
+            _attach_query_details(query_run, details)
             repositories.add_query_trace(db, query_run, retrieval_events, generation_event)
             db.commit()
             exc.trace_id = trace_id
@@ -575,6 +600,48 @@ def _retrieve_evidence(
             options=options,
         )
     return retriever.retrieve(db, query=query, top_k=top_k, filters=filters)
+
+
+def _retrieve_with_router(
+    router: ProviderRouter,
+    db: Session,
+    *,
+    query: str,
+    top_k: int,
+    filters: dict | None,
+    options: dict,
+    query_plan: QueryPlan | None = None,
+    retrieval_tasks: list[RetrievalTask] | None = None,
+) -> ProviderRouterResult:
+    if query_plan is None:
+        query_plan = QueryPlan(
+            plan_id=new_id("qp"),
+            original_query=query,
+            standalone_query=query,
+            retrieval_units=(
+                RetrievalUnit(
+                    unit_id="u0",
+                    purpose="runtime_direct_hybrid",
+                    text=query,
+                    provider="hybrid",
+                ),
+            ),
+            planner="runtime_direct",
+            validation_status="validated",
+        )
+        retrieval_tasks = tasks_from_plan(
+            query_plan,
+            executable_providers=router.executable_providers,
+        )
+    return router.retrieve(
+        db,
+        query=query,
+        top_k=top_k,
+        filters=filters,
+        options=options,
+        query_plan=query_plan,
+        retrieval_tasks=retrieval_tasks or [],
+    )
 
 
 def _truncate_text_to_budget(text: str, token_budget: int) -> str:
@@ -657,15 +724,19 @@ def _retrieval_trace_details(evidence: list[Evidence]) -> dict[str, Any]:
     }
 
 
-def _retriever_pack_details(retriever: object) -> dict[str, Any]:
-    details: dict[str, Any] = {}
-    provider_trace = getattr(retriever, "last_retrieval_trace", None)
-    if isinstance(provider_trace, dict):
-        details["provider_trace"] = provider_trace
-    pack = getattr(retriever, "last_evidence_pack", None)
-    if pack is None:
-        return details
-    details["evidence_pack"] = _evidence_pack_summary(pack)
+def _provider_router_details(router_result: ProviderRouterResult | None) -> dict[str, Any]:
+    if router_result is None:
+        return {}
+    details: dict[str, Any] = {
+        "provider_router_trace": dict(router_result.trace),
+        "provider_results": [
+            serialize_provider_result(result) for result in router_result.provider_results
+        ],
+    }
+    for result in router_result.provider_results:
+        if result.evidence_pack is not None:
+            details["evidence_pack"] = _evidence_pack_summary(result.evidence_pack)
+            break
     return details
 
 
@@ -875,6 +946,7 @@ def _plan_query(
     orchestrator: QueryOrchestrator | None,
     query: str,
     options: dict[str, Any],
+    executable_providers: tuple[str, ...],
 ) -> tuple[QueryPlan | None, list[RetrievalTask], int | None]:
     if orchestrator is None or _truthy(options.get("disable_query_plan")):
         return None, [], None
@@ -882,7 +954,7 @@ def _plan_query(
     started = time.perf_counter()
     plan = orchestrator.plan(query, use_llm=use_llm)
     latency_ms = int((time.perf_counter() - started) * 1000)
-    return plan, tasks_from_plan(plan), latency_ms
+    return plan, tasks_from_plan(plan, executable_providers=executable_providers), latency_ms
 
 
 def _int_option(options: dict[str, Any], name: str) -> int | None:

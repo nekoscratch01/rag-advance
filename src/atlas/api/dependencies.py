@@ -1,6 +1,12 @@
 from functools import lru_cache
 
-from atlas.core.config import Settings, bm25_sparse_enabled, get_settings
+from atlas.core.config import (
+    Settings,
+    bm25_sparse_enabled,
+    executable_query_providers,
+    get_settings,
+    known_query_providers,
+)
 from atlas.embeddings.bm25_sparse import BM25SparseEncoder
 from atlas.embeddings.bge_local import LocalBGEEmbedder
 from atlas.ingestion.service import IngestionService
@@ -13,6 +19,7 @@ from atlas.retrieval.retrievers.dense import DenseRetriever
 from atlas.retrieval.retrievers.hybrid import HybridRetriever
 from atlas.retrieval.providers.text_hybrid import TextHybridProvider
 from atlas.retrieval.ranking.reranker import CrossEncoderReranker
+from atlas.retrieval.router import ProviderRouter
 from atlas.vector.qdrant_client import get_qdrant_client
 
 
@@ -65,6 +72,11 @@ def get_reranker() -> CrossEncoderReranker | None:
 
 @lru_cache
 def get_retriever():
+    return get_text_hybrid_provider()
+
+
+@lru_cache
+def get_text_hybrid_provider() -> TextHybridProvider:
     settings = get_settings()
     hybrid_rerank = HybridRetriever(
         get_dense_retriever(),
@@ -114,6 +126,17 @@ def get_retriever():
 
 
 @lru_cache
+def get_provider_router() -> ProviderRouter:
+    providers = {}
+    if "hybrid" in executable_query_providers(get_settings()):
+        providers["hybrid"] = get_text_hybrid_provider()
+    return ProviderRouter(
+        providers,
+        known_providers=known_query_providers(get_settings()),
+    )
+
+
+@lru_cache
 def get_answer_generator() -> OpenAIAnswerGenerator:
     return OpenAIAnswerGenerator(get_settings())
 
@@ -128,7 +151,8 @@ def get_query_runtime() -> QueryRuntime:
     settings = get_settings()
     return QueryRuntime(
         settings=settings,
-        retriever=get_retriever(),
+        retriever=get_text_hybrid_provider(),
+        provider_router=get_provider_router(),
         generator=get_answer_generator(),
         orchestrator=get_query_orchestrator(),
     )

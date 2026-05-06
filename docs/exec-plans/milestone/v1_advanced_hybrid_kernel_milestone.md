@@ -107,14 +107,17 @@ query_type
 entities / periods / metrics
 retrieval_units
 metadata_filter
-enabled_providers
+metadata.known_providers
+metadata.executable_providers
 risk_flags
 budget
 ```
 
 实现策略是 LLM structured planner + deterministic fallback + validator。
 没有 `OPENAI_API_KEY` 时 fallback 仍可用；有 key 时默认 planner model 为 `gpt-5-nano`。
-V1 prompt 会动态注入 `enabled_providers=["hybrid"]`，禁用的 `sql` / `graph` 会触发 validation retry 或 fallback。
+V1 planner prompt 使用 `known_providers=["hybrid","sql","graph"]` 表达语义意图。
+V1 runtime 使用 `executable_providers=["hybrid"]` 执行当前能力。
+`sql` / `graph` 在 plan 中合法，但会在 V1 execution 中生成 `skipped_non_executable` ProviderResult。
 
 ### 2. RetrievalTask 固定 provider 输入
 
@@ -131,6 +134,37 @@ must_have_terms
 should_terms
 unit_weight
 ```
+
+### 2.1 ProviderRouter contract bump
+
+本阶段新增 runtime 收口层：
+
+```text
+ProviderRouter
+ProviderResult
+SourceAnchor
+```
+
+实际行为：
+
+```text
+hybrid task -> TextHybridProvider -> evidence
+sql task    -> skipped_non_executable -> trace only
+graph task  -> skipped_non_executable -> trace only
+```
+
+默认不做 `hybrid_backfill`，避免把 SQL/Graph 语义意图伪装成 hybrid。
+
+### 2.2 LLM client adapter
+
+Planner 和 Answer Generator 不再直接实例化 OpenAI SDK。
+
+```text
+llm.clients.LLMClient
+llm.clients.OpenAIClient
+```
+
+任务层只描述 planner / answer generation；底层 provider 替换、mock 测试、usage/latency trace 由 client adapter 承担。
 
 这让 provider 不再只面对一个字符串，而是面对可解释的检索任务。
 V1 live runtime 只执行 `provider="hybrid"`；`sql` / `graph` 只保留为未来 provider contract，不在 V1 中执行。
@@ -153,7 +187,7 @@ Section Lane
 Table Lane
 ```
 
-这些 lane 不是 Planner 可选 retriever。Planner 只能输出 provider 级别的 `hybrid` unit；Dense/BM25/Metric Alias/Section/Table 都由 `TextHybridProvider` 内部根据任务字段和配置派生。
+这些 lane 不是 Planner 可选 provider。Planner 只能输出 provider 级别的 `hybrid` / `sql` / `graph` unit；Dense/BM25/Metric Alias/Section/Table 都由 `TextHybridProvider` 内部根据 hybrid task 字段和配置派生。
 
 当前 sparse 输入规则：
 
