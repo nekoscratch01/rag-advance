@@ -720,6 +720,7 @@ def _evidence_trace_item(item: Evidence) -> dict[str, Any]:
         "rerank_score": metadata.get("rerank_score") or metadata.get("best_rerank_score"),
         "reranker": metadata.get("reranker"),
         "reranker_input": metadata.get("reranker_input"),
+        "text_hybrid_provider": metadata.get("text_hybrid_provider"),
         "evidence_pack": metadata.get("evidence_pack"),
         "coverage": metadata.get("coverage"),
         "included_in_prompt": metadata.get("included_in_prompt"),

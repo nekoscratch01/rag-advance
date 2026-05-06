@@ -13,6 +13,11 @@ from typing import Any
 
 import httpx
 
+from atlas.eval.v1_full import (
+    V1_COMPONENT_ORDER,
+    build_v1_record_metrics,
+    summarize_v1_records,
+)
 from atlas.eval.metrics import answer_metric_details, dense_retrieval_metrics
 from atlas.eval.service import EvalCase, load_cases
 
@@ -448,6 +453,7 @@ def evaluate_case_result(
         "metadata": case.metadata,
         "error": error,
     }
+    record["v1_metrics"] = build_v1_record_metrics(record)
     record["failure_reasons"] = failure_reasons(record)
     return record
 
@@ -590,6 +596,7 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     )
     metrics["cache_hit_rate"] = aggregate_bool(record.get("cache_hit") for record in records)
     summary["metrics"] = metrics
+    summary["v1_components"] = summarize_v1_records(records)
     return summary
 
 
@@ -617,7 +624,12 @@ def build_failure_buckets(records: list[dict[str, Any]]) -> dict[str, Any]:
             buckets["dense_missed_bm25_hit"].append(
                 cross_mode_bucket_entry(phase, dense, bm25)
             )
-        if hybrid and rerank and correct_retrieval_hit(hybrid) and not correct_retrieval_hit(rerank):
+        if (
+            hybrid
+            and rerank
+            and correct_retrieval_hit(hybrid)
+            and not correct_retrieval_hit(rerank)
+        ):
             buckets["hybrid_found_reranker_lost"].append(
                 cross_mode_bucket_entry(phase, hybrid, rerank)
             )
@@ -739,6 +751,59 @@ def build_report(summary: dict[str, Any], failure_buckets: dict[str, Any]) -> st
             + " |"
         )
 
+    lines.extend(
+        [
+            "",
+            "## V1 Component Benchmarks",
+            "",
+            (
+                "This section is derived from `/v1/query/{id}/trace`, including `details_json` "
+                "and the V1 trace table family when available."
+            ),
+            "",
+            "| Mode phase | Component | Present | Avg / Notes |",
+            "| --- | --- | ---: | --- |",
+        ]
+    )
+    for key, mode_summary in summary["mode_results"].items():
+        v1_summary = mode_summary.get("v1_components", {})
+        component_presence = v1_summary.get("component_presence", {})
+        for component in V1_COMPONENT_ORDER:
+            presence = component_presence.get(component, {})
+            note = component_note(component, v1_summary)
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        f"`{key}`",
+                        f"`{component}`",
+                        fmt_rate(presence),
+                        note,
+                    ]
+                )
+                + " |"
+            )
+
+    lines.extend(
+        [
+            "",
+            "## V1 Component Failure Buckets",
+            "",
+            "| Mode phase | Bucket | Count |",
+            "| --- | --- | ---: |",
+        ]
+    )
+    for key, mode_summary in summary["mode_results"].items():
+        buckets = (
+            mode_summary.get("v1_components", {})
+            .get("failure_buckets", {})
+        )
+        if not buckets:
+            lines.append(f"| `{key}` | `none` | 0 |")
+            continue
+        for bucket, count in buckets.items():
+            lines.append(f"| `{key}` | `{bucket}` | {count} |")
+
     lines.extend(["", "## Failure Buckets", "", "| Bucket | Count |", "| --- | ---: |"])
     for bucket, count in failure_buckets["bucket_counts"].items():
         lines.append(f"| `{bucket}` | {count} |")
@@ -783,6 +848,26 @@ def restart_env_for_mode(mode: str, cache_policy: str) -> dict[str, str]:
     if options.get("reranker_enabled"):
         env["ATLAS_RERANKER_ENABLED"] = "true"
     return env
+
+
+def component_note(component: str, v1_summary: Mapping[str, Any]) -> str:
+    evidence = v1_summary.get("evidence_metrics", {})
+    latency = v1_summary.get("latency_metrics", {})
+    if component == "evidence_builder":
+        selected = nested(evidence, "selected_block_count", "average")
+        dropped = nested(evidence, "dropped_block_count", "average")
+        return f"selected={fmt_number(selected)}, dropped={fmt_number(dropped)}"
+    if component == "query_orchestrator":
+        return f"plan_ms={fmt_number(nested(latency, 'plan_latency_ms', 'average'))}"
+    if component == "text_hybrid_provider":
+        return f"retrieval_ms={fmt_number(nested(latency, 'retrieval_latency_ms', 'average'))}"
+    if component == "reranker":
+        return f"rerank_ms={fmt_number(nested(latency, 'reranker_latency_ms', 'average'))}"
+    if component == "answer_generator":
+        return f"generation_ms={fmt_number(nested(latency, 'generation_latency_ms', 'average'))}"
+    if component == "trace_eval_cache":
+        return f"cache_ms={fmt_number(nested(latency, 'cache_latency_ms', 'average'))}"
+    return "-"
 
 
 def retrieved_top_k_from_trace(trace: Mapping[str, Any]) -> list[dict[str, Any]]:

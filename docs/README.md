@@ -28,19 +28,19 @@ benchmarks/
 ```text
 V0 Atlas Kernel
   状态：已实现
-  设计：docs/Design-docs/01_v0_atlas_kernel.md
 
-V1 Atlas Hybrid Kernel
-  状态：检索质量主路径已实现并完成仅检索测评
-  当前索引：docs/exec-plans/milestone/already_implemented.md
-  里程碑：docs/exec-plans/milestone/v1_hybrid_kernel_milestone.md
-  实际架构：docs/exec-plans/version-arch/v1_hybrid_kernel_arch.md
-  实验报告：benchmarks/rag_quality/financebench/reports/full_v1_retrieval_experiment.md
+V1 Atlas Advanced Hybrid Kernel
+  状态：Design 主链路已实现；检索质量已有测评证据；生成式答案可靠性已有 runner，仍需全量报告
+  设计：docs/Design-docs/01_V1_ADVANCED_HYBRID_KERNEL.md
+  执行里程碑：docs/exec-plans/milestone/v1_advanced_hybrid_kernel_milestone.md
+  实际架构：docs/exec-plans/version-arch/v1_advanced_hybrid_kernel_arch.md
+  历史检索实验：benchmarks/rag_quality/financebench/reports/full_v1_retrieval_experiment.md
 
 V2 Atlas Research Runtime
   状态：仍是设计阶段
   设计：docs/Design-docs/03_v2_atlas_research_runtime.md
 ```
+
 
 ## 阅读顺序
 
