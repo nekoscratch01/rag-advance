@@ -1,0 +1,321 @@
+from __future__ import annotations
+
+from atlas.core.config import Settings
+from atlas.llm.base import GeneratedAnswer, LLMUsage
+from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
+from atlas.query_runtime.service import QueryRuntime
+from atlas.retrieval.candidate import Candidate
+from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.providers.text_hybrid import TextHybridProvider
+from atlas.retrieval.retrieval_task import tasks_from_plan
+
+
+class _CandidateRetriever:
+    def __init__(self, source: str, *, chunk_id: str | None = None) -> None:
+        self.source = source
+        self.chunk_id = chunk_id
+        self.calls: list[dict] = []
+        self.evidence_calls: list[dict] = []
+
+    def retrieve_candidates(self, db, query, top_k, filters=None):
+        self.calls.append({"query": query, "top_k": top_k, "filters": dict(filters or {})})
+        rank = len(self.calls)
+        return [
+            Candidate(
+                chunk_id=self.chunk_id or f"{self.source}_{rank}",
+                document_id="doc_1",
+                doc_name="3M 2018 10-K",
+                source_title="3M 2018 10-K",
+                company="3M",
+                text=f"3M FY2018 capital expenditures were 1,577 million. {self.source} candidate {rank}",
+                page_start=10,
+                page_end=10,
+                chunk_index=rank,
+                token_count=6,
+                retrieved_by=(self.source,),
+                dense_rank=rank if self.source == "dense" else None,
+                dense_score=0.9 if self.source == "dense" else None,
+                lexical_rank=rank if self.source == "bm25" else None,
+                lexical_score=0.8 if self.source == "bm25" else None,
+                lexical_backend="qdrant_bm25" if self.source == "bm25" else None,
+                final_rank=rank,
+            )
+        ]
+
+    def retrieve(self, db, *, query, top_k, filters=None):
+        self.evidence_calls.append({"query": query, "top_k": top_k, "filters": dict(filters or {})})
+        return [
+            Evidence(
+                evidence_id="c1",
+                document_id="doc_legacy",
+                chunk_id="chk_legacy",
+                text="legacy evidence",
+                source_title="legacy",
+                source_uri=None,
+                section_title=None,
+                page_start=1,
+                page_end=1,
+                retrieval_score=1.0,
+                rank=1,
+                token_count=2,
+                metadata={"retrieved_by": [self.source]},
+            )
+        ]
+
+
+class _LegacyHybridRetriever(_CandidateRetriever):
+    pass
+
+
+class _StaticOrchestrator:
+    def __init__(self, plan: QueryPlan) -> None:
+        self._plan = plan
+
+    def plan(self, query, *, use_llm=True):
+        return self._plan
+
+
+class _Generator:
+    model_name = "test-generator"
+
+    def generate(self, *, query, evidence):
+        return GeneratedAnswer(
+            answer="3M FY2018 capital expenditures were 1,577 million [c1].",
+            confidence="supported",
+            usage=LLMUsage(input_tokens=10, output_tokens=8),
+            raw_output="{}",
+        )
+
+
+class _FakeDB:
+    def __init__(self) -> None:
+        self.added = []
+        self.commits = 0
+
+    def add(self, value) -> None:
+        self.added.append(value)
+
+    def flush(self) -> None:
+        return None
+
+    def commit(self) -> None:
+        self.commits += 1
+
+
+def _provider(
+    *,
+    default_mode: str = "hybrid_rrf",
+    reranker_enabled: bool = False,
+    shared_chunk_id: str | None = None,
+) -> tuple[TextHybridProvider, _CandidateRetriever, _CandidateRetriever]:
+    dense = _CandidateRetriever("dense", chunk_id=shared_chunk_id)
+    bm25 = _CandidateRetriever("bm25", chunk_id=shared_chunk_id)
+    return (
+        TextHybridProvider(
+            dense_retriever=dense,
+            bm25_retriever=bm25,
+            hybrid_rrf_retriever=_LegacyHybridRetriever("hybrid_rrf"),
+            hybrid_rerank_retriever=_LegacyHybridRetriever("hybrid_rerank"),
+            default_mode=default_mode,
+            rrf_top_k=10,
+            reranker_enabled=reranker_enabled,
+            max_context_tokens=None,
+        ),
+        dense,
+        bm25,
+    )
+
+
+def test_text_hybrid_provider_executes_v1_lanes_from_retrieval_tasks() -> None:
+    provider, dense, bm25 = _provider()
+    plan = QueryPlan(
+        plan_id="plan_1",
+        original_query="What was 3M FY2018 capex?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="original",
+                text="3M FY2018 capex",
+                retrievers=("dense", "bm25", "metric_alias", "section", "table"),
+                filters={"document_ids": ["doc_1"]},
+                should_terms=("capital expenditures", "purchases of property"),
+                top_k=3,
+            ),
+        ),
+        planner="test",
+    )
+
+    evidence = provider.retrieve_with_plan(
+        object(),
+        query=plan.original_query,
+        top_k=5,
+        filters={"tenant": "test"},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=plan,
+        retrieval_tasks=tasks_from_plan(plan),
+    )
+
+    assert evidence
+    assert len(dense.calls) == 1
+    assert len(bm25.calls) == 4
+    assert bm25.calls[1]["query"].endswith("capital expenditures purchases of property")
+    assert "table row page" in bm25.calls[-1]["query"]
+    assert bm25.calls[0]["filters"] == {"tenant": "test", "document_ids": ["doc_1"]}
+    assert evidence[0].metadata["provider"] == "text_hybrid"
+    assert evidence[0].metadata["text_hybrid_provider"]["query_plan_id"] == "plan_1"
+    assert evidence[0].metadata["retrieval_unit_id"] == "u0"
+    assert evidence[0].metadata["fusion_score"] is not None
+
+
+def test_text_hybrid_provider_keeps_legacy_modes_available() -> None:
+    provider, dense, bm25 = _provider()
+
+    evidence = provider.retrieve_with_options(
+        object(),
+        query="plain dense query",
+        top_k=1,
+        filters={},
+        options={"retrieval_mode": "dense_only"},
+    )
+
+    assert evidence[0].metadata["provider"] == "text_hybrid"
+    assert evidence[0].metadata["provider_path"] == "legacy_mode_switch"
+    assert len(dense.evidence_calls) == 1
+    assert len(bm25.calls) == 0
+    assert len(bm25.evidence_calls) == 0
+
+    provider.retrieve_with_options(
+        object(),
+        query="plain bm25 query",
+        top_k=1,
+        filters={},
+        options={"retrieval_mode": "bm25_only"},
+    )
+    provider.retrieve_with_options(
+        object(),
+        query="plain hybrid query",
+        top_k=1,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+    )
+
+    assert len(bm25.evidence_calls) == 1
+    assert len(provider.mode_switcher.hybrid_rrf_retriever.evidence_calls) == 1
+
+
+def test_plan_aware_provider_respects_dense_only_mode() -> None:
+    provider, dense, bm25 = _provider(default_mode="dense")
+    plan = QueryPlan(
+        plan_id="plan_1",
+        original_query="What was 3M FY2018 capex?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="original",
+                text="3M FY2018 capex",
+                retrievers=("dense", "bm25", "table"),
+            ),
+        ),
+    )
+
+    evidence = provider.retrieve_with_plan(
+        object(),
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={},
+        query_plan=plan,
+        retrieval_tasks=tasks_from_plan(plan),
+    )
+
+    assert evidence
+    assert len(dense.calls) == 1
+    assert len(bm25.calls) == 0
+    assert evidence[0].metadata["retrieved_by"] == ["dense"]
+
+
+def test_plan_aware_provider_preserves_multi_lane_attribution_after_fusion() -> None:
+    provider, dense, bm25 = _provider(shared_chunk_id="shared_chunk")
+    plan = QueryPlan(
+        plan_id="plan_1",
+        original_query="What was 3M FY2018 capex?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="original",
+                text="3M FY2018 capex",
+                retrievers=("dense", "bm25"),
+            ),
+        ),
+    )
+
+    evidence = provider.retrieve_with_plan(
+        object(),
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=plan,
+        retrieval_tasks=tasks_from_plan(plan),
+    )
+
+    assert len(dense.calls) == 1
+    assert len(bm25.calls) == 1
+    assert evidence[0].chunk_id == "shared_chunk"
+    assert evidence[0].metadata["lane"] == "multi_lane"
+    assert evidence[0].metadata["lanes"] == ["dense", "bm25"]
+    assert evidence[0].metadata["lane_trace"]["lane"] == "multi_lane"
+    assert {
+        item["lane"] for item in evidence[0].metadata["lane_attributions"]
+    } == {"dense", "bm25"}
+
+
+def test_query_runtime_uses_text_hybrid_provider_and_persists_plan_trace() -> None:
+    provider, dense, bm25 = _provider()
+    plan = QueryPlan(
+        plan_id="plan_1",
+        original_query="What was 3M FY2018 capex?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="original",
+                text="3M FY2018 capex",
+                retrievers=("dense", "bm25", "table"),
+            ),
+        ),
+    )
+    runtime = QueryRuntime(
+        settings=Settings(
+            openai_api_key=None,
+            cache_enabled=False,
+            retrieval_mode="hybrid_rrf",
+            reranker_enabled=False,
+            max_context_tokens=6000,
+        ),
+        retriever=provider,
+        generator=_Generator(),
+        orchestrator=_StaticOrchestrator(plan),
+    )
+    db = _FakeDB()
+
+    result = runtime.run(
+        db,
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+    )
+
+    query_runs = [item for item in db.added if item.__class__.__name__ == "QueryRun"]
+    assert result.details["query_plan"]["plan_id"] == "plan_1"
+    assert len(dense.calls) == 1
+    assert len(bm25.calls) == 2
+    assert db.commits == 1
+    assert query_runs
+    assert query_runs[0].details_json["trace"]["metadata"]["query_plan"]["plan_id"] == "plan_1"
+    assert result.details["retrieval_trace"]["evidence_count"] == 3
+    assert {
+        lane
+        for item in result.details["retrieval_trace"]["top_k"]
+        for lane in item["lanes"]
+    } == {"dense", "bm25", "table"}

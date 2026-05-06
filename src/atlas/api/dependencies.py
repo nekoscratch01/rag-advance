@@ -11,7 +11,7 @@ from atlas.query_runtime.service import QueryRuntime
 from atlas.retrieval.bm25_retriever import BM25Retriever
 from atlas.retrieval.dense_retriever import DenseRetriever
 from atlas.retrieval.hybrid_retriever import HybridRetriever
-from atlas.retrieval.mode_switching import ModeSwitchingRetriever
+from atlas.retrieval.providers.text_hybrid import TextHybridProvider
 from atlas.retrieval.reranker import CrossEncoderReranker
 from atlas.vector.qdrant_client import get_qdrant_client
 
@@ -95,12 +95,21 @@ def get_retriever():
     default_mode = settings.retrieval_mode.strip().lower()
     if default_mode == "hybrid" and not settings.reranker_enabled:
         default_mode = "hybrid_rrf"
-    return ModeSwitchingRetriever(
+    return TextHybridProvider(
         dense_retriever=get_dense_retriever(),
         bm25_retriever=get_bm25_retriever(),
         hybrid_rrf_retriever=hybrid_rrf,
         hybrid_rerank_retriever=hybrid_rerank,
         default_mode=default_mode,
+        rrf_k=settings.hybrid_rrf_k,
+        rrf_top_k=settings.rrf_top_k,
+        reranker=get_reranker(),
+        reranker_enabled=settings.reranker_enabled,
+        reranker_top_k=settings.reranker_top_k,
+        reranker_output_k=settings.reranker_output_k,
+        dense_top_k=settings.hybrid_dense_top_k,
+        lexical_top_k=settings.hybrid_lexical_top_k,
+        max_context_tokens=settings.max_context_tokens,
     )
 
 

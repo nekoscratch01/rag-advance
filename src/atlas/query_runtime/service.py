@@ -271,7 +271,10 @@ class QueryRuntime:
                 query_plan=query_plan,
                 retrieval_tasks=retrieval_tasks,
                 plan_latency_ms=plan_latency_ms,
-                extra=_critic_details(pre_critic=pre_critic, post_critic=None),
+                extra={
+                    **_critic_details(pre_critic=pre_critic, post_critic=None),
+                    **_retrieval_trace_details([]),
+                },
             )
             _record_trace_metadata(
                 query_id=query_id,
@@ -325,7 +328,10 @@ class QueryRuntime:
                 query_plan=query_plan,
                 retrieval_tasks=retrieval_tasks,
                 plan_latency_ms=plan_latency_ms,
-                extra=_critic_details(pre_critic=pre_critic, post_critic=None),
+                extra={
+                    **_critic_details(pre_critic=pre_critic, post_critic=None),
+                    **_retrieval_trace_details(generation_evidence),
+                },
             )
             _record_trace_metadata(
                 query_id=query_id,
@@ -382,7 +388,10 @@ class QueryRuntime:
                 query_plan=query_plan,
                 retrieval_tasks=retrieval_tasks,
                 plan_latency_ms=plan_latency_ms,
-                extra=_critic_details(pre_critic=pre_critic, post_critic=post_critic),
+                extra={
+                    **_critic_details(pre_critic=pre_critic, post_critic=post_critic),
+                    **_retrieval_trace_details(generation_evidence),
+                },
             )
             confidence = _critic_confidence(
                 generated.confidence,
@@ -618,6 +627,36 @@ def _runtime_details(
         ]
         details["plan_latency_ms"] = plan_latency_ms
     return details
+
+
+def _retrieval_trace_details(evidence: list[Evidence]) -> dict[str, Any]:
+    return {
+        "retrieval_trace": {
+            "evidence_count": len(evidence),
+            "top_k": [_evidence_trace_item(item) for item in evidence],
+        }
+    }
+
+
+def _evidence_trace_item(item: Evidence) -> dict[str, Any]:
+    metadata = item.metadata or {}
+    return {
+        "evidence_id": item.evidence_id,
+        "chunk_id": item.chunk_id,
+        "rank": item.rank,
+        "retrieval_score": item.retrieval_score,
+        "retrieved_by": list(item.retrieved_by or metadata.get("retrieved_by") or ()),
+        "provider": metadata.get("provider") or metadata.get("retrieval_provider"),
+        "lane": metadata.get("lane"),
+        "lanes": list(metadata.get("lanes") or ()),
+        "lane_attributions": list(metadata.get("lane_attributions") or ()),
+        "retrieval_task_id": metadata.get("retrieval_task_id"),
+        "retrieval_unit_id": metadata.get("retrieval_unit_id"),
+        "fusion_rank": metadata.get("fusion_rank") or metadata.get("best_fusion_rank"),
+        "fusion_score": metadata.get("fusion_score") or metadata.get("best_fusion_score"),
+        "rerank_rank": metadata.get("rerank_rank") or metadata.get("best_rerank_rank"),
+        "rerank_score": metadata.get("rerank_score") or metadata.get("best_rerank_score"),
+    }
 
 
 def _combined_critic_status(
