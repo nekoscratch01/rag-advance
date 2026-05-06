@@ -658,10 +658,15 @@ def _retrieval_trace_details(evidence: list[Evidence]) -> dict[str, Any]:
 
 
 def _retriever_pack_details(retriever: object) -> dict[str, Any]:
+    details: dict[str, Any] = {}
+    provider_trace = getattr(retriever, "last_retrieval_trace", None)
+    if isinstance(provider_trace, dict):
+        details["provider_trace"] = provider_trace
     pack = getattr(retriever, "last_evidence_pack", None)
     if pack is None:
-        return {}
-    return {"evidence_pack": _evidence_pack_summary(pack)}
+        return details
+    details["evidence_pack"] = _evidence_pack_summary(pack)
+    return details
 
 
 def _evidence_pack_summary(pack: object) -> dict[str, Any]:
@@ -699,8 +704,10 @@ def _evidence_trace_item(item: Evidence) -> dict[str, Any]:
         "retrieval_score": item.retrieval_score,
         "retrieved_by": list(item.retrieved_by or metadata.get("retrieved_by") or ()),
         "provider": metadata.get("provider") or metadata.get("retrieval_provider"),
+        "provider_status": metadata.get("provider_status"),
         "lane": metadata.get("lane"),
         "lanes": list(metadata.get("lanes") or ()),
+        "internal_lanes": list(metadata.get("internal_lanes") or ()),
         "lane_attributions": list(metadata.get("lane_attributions") or ()),
         "lane_contributions": list(
             metadata.get("lane_contributions")
@@ -712,6 +719,12 @@ def _evidence_trace_item(item: Evidence) -> dict[str, Any]:
             or ()
         ),
         "weighted_contribution": metadata.get("weighted_contribution"),
+        "fusion_backend": metadata.get("fusion_backend")
+        or (
+            metadata.get("fusion", {}).get("backend")
+            if isinstance(metadata.get("fusion"), dict)
+            else None
+        ),
         "retrieval_task_id": metadata.get("retrieval_task_id"),
         "retrieval_unit_id": metadata.get("retrieval_unit_id"),
         "fusion_rank": metadata.get("fusion_rank") or metadata.get("best_fusion_rank"),

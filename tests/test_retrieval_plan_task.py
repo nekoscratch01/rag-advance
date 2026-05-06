@@ -170,3 +170,31 @@ def test_cache_key_ignores_volatile_plan_and_task_ids() -> None:
     )
 
     assert first == second
+
+
+def test_sql_and_graph_units_compile_to_skipped_tasks() -> None:
+    plan = QueryPlan(
+        plan_id="plan_future",
+        original_query="Who supplies Apple Vision Pro displays?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_sql",
+                purpose="numerical_aggregation",
+                text="Apple Microsoft R&D 2023",
+                retrievers=("sql",),
+            ),
+            RetrievalUnit(
+                unit_id="u_graph",
+                purpose="supply_chain_discovery",
+                text="Apple Vision Pro display suppliers",
+                retrievers=("graph",),
+            ),
+        ),
+    )
+
+    tasks = tasks_from_plan(plan)
+
+    assert [task.provider for task in tasks] == ["sql", "graph"]
+    assert all(task.provider_status == "skipped" for task in tasks)
+    assert all(task.lanes == () for task in tasks)
+    assert all(task.unsupported_reason for task in tasks)

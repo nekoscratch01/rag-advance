@@ -59,6 +59,7 @@ def weighted_rrf_fuse(
             weighted_contribution = effective_weight * _rrf_contribution(rank, rrf_k=rrf_k)
             contribution = {
                 "lane": lane_input.lane,
+                "fusion_backend": "weighted_rrf",
                 "chunk_id": candidate.chunk_id,
                 "parent_id": candidate.parent_id or candidate.metadata.get("parent_id"),
                 "rank": rank,
@@ -119,6 +120,8 @@ def fusion_trace_payload(candidate: Candidate, *, rrf_k: int | None = None) -> d
             rrf_k = existing_rrf_k if isinstance(existing_rrf_k, int) else None
 
     payload = {
+        "backend": "weighted_rrf",
+        "version": "current",
         "dense_rank": candidate.dense_rank,
         "dense_score": candidate.dense_score,
         "lexical_rank": candidate.lexical_rank,
@@ -274,10 +277,13 @@ def _metadata_with_weighted_trace(
     metadata = dict(candidate.metadata)
     metadata["lane"] = lane
     metadata["lanes"] = lanes
+    metadata["fusion_backend"] = "weighted_rrf"
     metadata["weighted_contribution"] = fusion_score
     metadata["lane_contributions"] = list(lane_contributions)
     metadata["fusion"] = {
         "strategy": "weighted_rrf",
+        "backend": "weighted_rrf",
+        "version": "current",
         "rrf_k": rrf_k,
         "lane": lane,
         "lanes": lanes,

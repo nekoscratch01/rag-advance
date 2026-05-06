@@ -16,13 +16,7 @@ QueryType = Literal[
     "ambiguous",
 ]
 
-RetrieverName = Literal[
-    "dense",
-    "bm25",
-    "table",
-    "metric_alias",
-    "section",
-]
+ProviderName = Literal["hybrid", "sql", "graph"]
 
 
 class _StrictModel(BaseModel):
@@ -65,8 +59,8 @@ class RetrievalUnit(_StrictModel):
     unit_id: str
     purpose: str
     text: str
-    retrievers: tuple[RetrieverName, ...] = ("dense", "bm25")
-    filters: dict[str, Any] = Field(default_factory=dict)
+    retrievers: tuple[ProviderName, ...] = ("hybrid",)
+    metadata_filter: dict[str, Any] = Field(default_factory=dict)
     must_have_terms: tuple[str, ...] = ()
     should_terms: tuple[str, ...] = ()
     top_k: int = Field(default=10, ge=1)
@@ -84,10 +78,19 @@ class RetrievalUnit(_StrictModel):
 
     @field_validator("retrievers")
     @classmethod
-    def _retrievers_not_empty(cls, value: tuple[RetrieverName, ...]) -> tuple[RetrieverName, ...]:
+    def _retrievers_single_provider(cls, value: tuple[ProviderName, ...]) -> tuple[ProviderName, ...]:
         if not value:
             raise ValueError("retrieval unit requires at least one retriever")
+        if len(value) != 1:
+            raise ValueError(
+                "compound_unit_must_be_split: compound retrievers like [sql, hybrid] "
+                "are forbidden. Split this into separate single-purpose unit_proposals."
+            )
         return value
+
+    @property
+    def provider(self) -> ProviderName:
+        return self.retrievers[0]
 
 
 class QueryPlan(_StrictModel):
@@ -98,7 +101,7 @@ class QueryPlan(_StrictModel):
     entities: tuple[Entity, ...] = ()
     periods: tuple[Period, ...] = ()
     metrics: tuple[Metric, ...] = ()
-    filters: dict[str, Any] = Field(default_factory=dict)
+    metadata_filter: dict[str, Any] = Field(default_factory=dict)
     retrieval_units: tuple[RetrievalUnit, ...] = Field(min_length=1)
     risk_flags: tuple[str, ...] = ()
     budget: RetrievalBudget = Field(default_factory=RetrievalBudget)

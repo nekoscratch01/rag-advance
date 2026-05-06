@@ -115,9 +115,10 @@ def _plan() -> QueryPlan:
                 unit_id="u0",
                 purpose="metric",
                 text="3M FY2018 capital expenditures",
-                retrievers=("dense", "bm25"),
+                retrievers=("hybrid",),
                 must_have_terms=("3M", "2018"),
                 should_terms=("capital expenditures",),
+                metadata={"internal_lanes": ["dense", "bm25"]},
             ),
         ),
     )

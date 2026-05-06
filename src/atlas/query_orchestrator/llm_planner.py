@@ -5,11 +5,15 @@ import re
 from typing import Any
 
 from openai import OpenAI
+from pydantic import ValidationError
 
-from atlas.core.config import Settings
+from atlas.core.config import Settings, enabled_query_providers
 from atlas.core.ids import new_id
 from atlas.query_orchestrator.ontology import FinanceMetricOntology
-from atlas.query_orchestrator.prompts import QUERY_PLANNER_INSTRUCTIONS, build_query_planner_input
+from atlas.query_orchestrator.prompts import (
+    build_query_planner_input,
+    build_query_planner_instructions,
+)
 from atlas.query_orchestrator.schema import (
     Entity,
     Metric,
@@ -18,6 +22,10 @@ from atlas.query_orchestrator.schema import (
     RetrievalBudget,
     RetrievalUnit,
 )
+from atlas.query_orchestrator.validator import QueryPlanValidator
+
+
+PLANNER_PROVIDER_NAMES = ("hybrid", "sql", "graph")
 
 
 class LLMQueryPlanner:
@@ -28,7 +36,7 @@ class LLMQueryPlanner:
     def available(self) -> bool:
         return self.settings.openai_api_key is not None
 
-    def plan(self, query: str) -> QueryPlan:
+    def plan(self, query: str, *, validation_feedback: str | None = None) -> QueryPlan:
         if self.settings.openai_api_key is None:
             raise RuntimeError("OPENAI_API_KEY is required for LLM query planning.")
 
@@ -36,17 +44,49 @@ class LLMQueryPlanner:
             api_key=self.settings.openai_api_key.get_secret_value(),
             timeout=self.settings.llm_timeout_seconds,
         )
-        raw = self._request_plan(client, query)
-        return self._plan_from_raw(query, raw)
+        feedback = validation_feedback
+        last_error: Exception | None = None
+        attempts = _planner_attempt_count(self.settings)
+        validator = QueryPlanValidator(
+            self.ontology,
+            enabled_providers=_enabled_provider_names(self.settings),
+        )
+        for _attempt in range(attempts):
+            raw = self._request_plan(client, query, validation_feedback=feedback)
+            try:
+                candidate = self._plan_from_raw(query, raw)
+            except (ValueError, ValidationError) as exc:
+                last_error = exc
+                feedback = _exception_feedback(exc)
+                continue
+            validation = validator.validate(candidate)
+            if validation.ok:
+                return candidate
+            feedback = _validation_feedback(validation.reasons, validation.warnings)
+            last_error = ValueError(feedback)
 
-    def _request_plan(self, client: OpenAI, query: str) -> dict[str, Any]:
+        if last_error is not None:
+            raise ValueError(
+                f"LLM planner failed validation after {attempts} attempt(s): {last_error}"
+            ) from last_error
+        raise ValueError("LLM planner failed validation without an error detail")
+
+    def _request_plan(
+        self,
+        client: OpenAI,
+        query: str,
+        *,
+        validation_feedback: str | None = None,
+    ) -> dict[str, Any]:
+        enabled_providers = _enabled_provider_names(self.settings)
         request = {
             "model": self.settings.query_planner_model,
-            "instructions": QUERY_PLANNER_INSTRUCTIONS,
+            "instructions": build_query_planner_instructions(enabled_providers),
             "input": build_query_planner_input(
                 query,
                 _ontology_excerpt(self.ontology),
                 self.settings.query_planner_max_units,
+                validation_feedback=validation_feedback,
             ),
             "max_output_tokens": 2000,
             "reasoning": {"effort": self.settings.llm_reasoning_effort},
@@ -54,7 +94,7 @@ class LLMQueryPlanner:
                 "format": {
                     "type": "json_schema",
                     "name": "atlas_query_plan",
-                    "schema": _llm_plan_schema(),
+                    "schema": _llm_plan_schema(enabled_providers),
                     "strict": True,
                 }
             },
@@ -70,6 +110,7 @@ class LLMQueryPlanner:
         return _parse_json_object(raw_output)
 
     def _plan_from_raw(self, query: str, raw: dict[str, Any]) -> QueryPlan:
+        _reject_legacy_filters(raw, "query_plan")
         raw_metrics = [_metric_from_raw(item, self.ontology) for item in raw.get("metrics") or ()]
         unknown_metrics = [
             item["raw_value"]
@@ -87,7 +128,7 @@ class LLMQueryPlanner:
             entities=tuple(_entity_from_raw(item) for item in raw.get("entities") or ()),
             periods=tuple(_period_from_raw(item) for item in raw.get("periods") or ()),
             metrics=metrics,
-            filters=_dict_value(raw.get("filters")),
+            metadata_filter=_dict_value(raw.get("metadata_filter")),
             retrieval_units=tuple(
                 _retrieval_unit_from_raw(item, index)
                 for index, item in enumerate(raw.get("retrieval_units") or ())
@@ -96,7 +137,10 @@ class LLMQueryPlanner:
             planner="llm_structured",
             planner_version=self.settings.query_planner_version,
             validation_status="unvalidated",
-            metadata={"model": self.settings.query_planner_model},
+            metadata={
+                "model": self.settings.query_planner_model,
+                "enabled_providers": list(_enabled_provider_names(self.settings)),
+            },
         )
 
 
@@ -141,13 +185,14 @@ def _metric_from_raw(item: Any, ontology: FinanceMetricOntology) -> dict[str, An
 
 def _retrieval_unit_from_raw(item: Any, index: int) -> RetrievalUnit:
     raw = _dict_value(item)
-    retrievers = tuple(str(value) for value in raw.get("retrievers") or ("dense", "bm25"))
+    _reject_legacy_filters(raw, f"retrieval_units[{index}]")
+    retrievers = tuple(str(value) for value in raw.get("retrievers") or ("hybrid",))
     return RetrievalUnit(
         unit_id=str(raw.get("unit_id") or f"u{index}"),
         purpose=str(raw.get("purpose") or "llm_generated"),
         text=str(raw.get("text") or ""),
         retrievers=retrievers,  # type: ignore[arg-type]
-        filters=_dict_value(raw.get("filters")),
+        metadata_filter=_dict_value(raw.get("metadata_filter")),
         must_have_terms=tuple(str(value) for value in raw.get("must_have_terms") or ()),
         should_terms=tuple(str(value) for value in raw.get("should_terms") or ()),
         top_k=int(raw.get("top_k") or 10),
@@ -161,7 +206,7 @@ def _retrieval_unit_from_raw(item: Any, index: int) -> RetrievalUnit:
     )
 
 
-def _llm_plan_schema() -> dict[str, Any]:
+def _llm_plan_schema(enabled_providers: tuple[str, ...]) -> dict[str, Any]:
     return {
         "type": "object",
         "additionalProperties": False,
@@ -189,9 +234,13 @@ def _llm_plan_schema() -> dict[str, Any]:
                 "type": "array",
                 "items": _metric_schema(),
             },
+            "metadata_filter": {
+                "type": "object",
+                "additionalProperties": True,
+            },
             "retrieval_units": {
                 "type": "array",
-                "items": _retrieval_unit_schema(),
+                "items": _retrieval_unit_schema(enabled_providers),
             },
         },
         "required": [
@@ -200,6 +249,7 @@ def _llm_plan_schema() -> dict[str, Any]:
             "entities",
             "periods",
             "metrics",
+            "metadata_filter",
             "retrieval_units",
         ],
     }
@@ -247,13 +297,14 @@ def _metric_schema() -> dict[str, Any]:
     }
 
 
-def _retrieval_unit_schema() -> dict[str, Any]:
+def _retrieval_unit_schema(enabled_providers: tuple[str, ...]) -> dict[str, Any]:
+    enabled_providers = _normalize_provider_names(enabled_providers)
     string_array = {"type": "array", "items": {"type": "string"}}
     retriever_array = {
         "type": "array",
         "items": {
             "type": "string",
-            "enum": ["dense", "bm25", "table", "metric_alias", "section"],
+            "enum": list(enabled_providers),
         },
     }
     return {
@@ -264,6 +315,10 @@ def _retrieval_unit_schema() -> dict[str, Any]:
             "purpose": {"type": "string"},
             "text": {"type": "string"},
             "retrievers": retriever_array,
+            "metadata_filter": {
+                "type": "object",
+                "additionalProperties": True,
+            },
             "must_have_terms": string_array,
             "should_terms": string_array,
             "top_k": {"type": "integer"},
@@ -274,6 +329,7 @@ def _retrieval_unit_schema() -> dict[str, Any]:
             "purpose",
             "text",
             "retrievers",
+            "metadata_filter",
             "must_have_terms",
             "should_terms",
             "top_k",
@@ -316,6 +372,49 @@ def _parse_json_object(raw_output: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("LLM planner JSON must be an object")
     return value
+
+
+def _enabled_provider_names(settings: Settings) -> tuple[str, ...]:
+    return _normalize_provider_names(enabled_query_providers(settings))
+
+
+def _normalize_provider_names(values: tuple[str, ...]) -> tuple[str, ...]:
+    providers: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        provider = str(value).strip().lower()
+        if provider not in PLANNER_PROVIDER_NAMES or provider in seen:
+            continue
+        providers.append(provider)
+        seen.add(provider)
+    return tuple(providers) or ("hybrid",)
+
+
+def _planner_attempt_count(settings: Settings) -> int:
+    try:
+        retry_count = int(getattr(settings, "query_planner_retry_count", 2))
+    except (TypeError, ValueError):
+        retry_count = 2
+    return 1 + max(0, min(retry_count, 2))
+
+
+def _exception_feedback(exc: Exception) -> str:
+    message = " ".join(str(exc).split())
+    return f"structured_output_validation_failed: {message[:800]}"
+
+
+def _validation_feedback(reasons: tuple[str, ...], warnings: tuple[str, ...]) -> str:
+    parts: list[str] = []
+    if reasons:
+        parts.append("reasons=" + "; ".join(reasons))
+    if warnings:
+        parts.append("warnings=" + "; ".join(warnings))
+    return "query_plan_validation_failed: " + " | ".join(parts)
+
+
+def _reject_legacy_filters(raw: dict[str, Any], context: str) -> None:
+    if "filters" in raw:
+        raise ValueError(f"{context}.filters is not supported; use metadata_filter")
 
 
 def _dict_value(value: Any) -> dict[str, Any]:

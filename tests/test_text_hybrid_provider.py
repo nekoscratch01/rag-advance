@@ -170,15 +170,17 @@ def test_text_hybrid_provider_executes_v1_lanes_from_retrieval_tasks() -> None:
     plan = QueryPlan(
         plan_id="plan_1",
         original_query="What was 3M FY2018 capex?",
+        metadata_filter={"tenant": "test"},
         retrieval_units=(
             RetrievalUnit(
                 unit_id="u0",
                 purpose="original",
                 text="3M FY2018 capex",
-                retrievers=("dense", "bm25", "metric_alias", "section", "table"),
-                filters={"document_ids": ["doc_1"]},
+                retrievers=("hybrid",),
+                metadata_filter={"document_ids": ["doc_1"]},
                 should_terms=("capital expenditures", "purchases of property"),
                 top_k=3,
+                metadata={"internal_lanes": ["dense", "bm25", "metric_alias", "section", "table"]},
             ),
         ),
         planner="test",
@@ -188,7 +190,7 @@ def test_text_hybrid_provider_executes_v1_lanes_from_retrieval_tasks() -> None:
         object(),
         query=plan.original_query,
         top_k=5,
-        filters={"tenant": "test"},
+        filters={"runtime": "direct"},
         options={"retrieval_mode": "hybrid_rrf"},
         query_plan=plan,
         retrieval_tasks=tasks_from_plan(plan),
@@ -197,13 +199,65 @@ def test_text_hybrid_provider_executes_v1_lanes_from_retrieval_tasks() -> None:
     assert evidence
     assert len(dense.calls) == 1
     assert len(bm25.calls) == 4
+    assert bm25.calls[0]["query"].endswith("capital expenditures purchases of property")
     assert bm25.calls[1]["query"].endswith("capital expenditures purchases of property")
     assert "table row page" in bm25.calls[-1]["query"]
-    assert bm25.calls[0]["filters"] == {"tenant": "test", "document_ids": ["doc_1"]}
+    assert bm25.calls[0]["filters"] == {
+        "runtime": "direct",
+        "tenant": "test",
+        "document_ids": ["doc_1"],
+    }
     assert evidence[0].metadata["provider"] == "text_hybrid"
+    assert evidence[0].metadata["metadata_filter"] == {
+        "tenant": "test",
+        "document_ids": ["doc_1"],
+    }
+    assert evidence[0].metadata["internal_lanes"] == [
+        "dense",
+        "bm25",
+        "metric_alias",
+        "section",
+        "table",
+    ]
     assert evidence[0].metadata["text_hybrid_provider"]["query_plan_id"] == "plan_1"
+    assert evidence[0].metadata["text_hybrid_provider"]["fusion"]["backend"] == "weighted_rrf"
     assert evidence[0].metadata["retrieval_unit_id"] == "u0"
     assert evidence[0].metadata["fusion_score"] is not None
+
+
+def test_text_hybrid_provider_skips_unsupported_provider_tasks_without_fake_evidence() -> None:
+    provider, dense, bm25 = _provider()
+    plan = QueryPlan(
+        plan_id="plan_1",
+        original_query="What was 3M FY2018 capex?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="sql_0",
+                purpose="structured_lookup",
+                text="3M FY2018 capex",
+                retrievers=("sql",),
+            ),
+        ),
+        planner="test",
+    )
+
+    evidence = provider.retrieve_with_plan(
+        object(),
+        query=plan.original_query,
+        top_k=5,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=plan,
+        retrieval_tasks=tasks_from_plan(plan),
+    )
+
+    assert evidence == []
+    assert dense.calls == []
+    assert bm25.calls == []
+    assert provider.last_retrieval_trace is not None
+    assert provider.last_retrieval_trace["provider_status"] == "skipped"
+    assert provider.last_retrieval_trace["tasks"][0]["provider"] == "sql"
+    assert provider.last_retrieval_trace["tasks"][0]["unsupported_reason"]
 
 
 def test_text_hybrid_provider_keeps_legacy_modes_available() -> None:
@@ -252,7 +306,8 @@ def test_plan_aware_provider_respects_dense_only_mode() -> None:
                 unit_id="u0",
                 purpose="original",
                 text="3M FY2018 capex",
-                retrievers=("dense", "bm25", "table"),
+                retrievers=("hybrid",),
+                metadata={"internal_lanes": ["dense", "bm25", "table"]},
             ),
         ),
     )
@@ -283,7 +338,8 @@ def test_plan_aware_provider_preserves_multi_lane_attribution_after_fusion() -> 
                 unit_id="u0",
                 purpose="original",
                 text="3M FY2018 capex",
-                retrievers=("dense", "bm25"),
+                retrievers=("hybrid",),
+                metadata={"internal_lanes": ["dense", "bm25"]},
             ),
         ),
     )
@@ -323,8 +379,9 @@ def test_plan_aware_provider_uses_lane_weights_in_weighted_rrf() -> None:
                 unit_id="u0",
                 purpose="original",
                 text="3M FY2018 capex",
-                retrievers=("dense", "table"),
+                retrievers=("hybrid",),
                 lane_weights={"table": 4.0},
+                metadata={"internal_lanes": ["dense", "table"]},
             ),
         ),
     )
@@ -362,8 +419,9 @@ def test_parent_evidence_preserves_canonical_weighted_trace(monkeypatch: pytest.
                 unit_id="u0",
                 purpose="original",
                 text="3M FY2018 capex",
-                retrievers=("dense", "bm25", "table"),
+                retrievers=("hybrid",),
                 lane_weights={"table": 3.0},
+                metadata={"internal_lanes": ["dense", "bm25", "table"]},
             ),
         ),
     )
@@ -411,7 +469,8 @@ def test_query_runtime_uses_text_hybrid_provider_and_persists_plan_trace() -> No
                 unit_id="u0",
                 purpose="original",
                 text="3M FY2018 capex",
-                retrievers=("dense", "bm25", "table"),
+                retrievers=("hybrid",),
+                metadata={"internal_lanes": ["dense", "bm25", "table"]},
             ),
         ),
     )
@@ -509,6 +568,36 @@ def test_query_runtime_exposes_empty_evidence_pack_drop_reasons() -> None:
     assert result.confidence == "insufficient"
     assert result.details["evidence_pack"]["dropped_block_count"] == 1
     assert result.details["evidence_pack"]["dropped_blocks"][0]["drop_reason"] == "token_budget"
+
+
+def test_text_hybrid_provider_skips_unsupported_future_provider_tasks() -> None:
+    provider, dense, bm25 = _provider()
+    plan = QueryPlan(
+        plan_id="plan_future",
+        original_query="Who supplies Apple Vision Pro displays?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_graph",
+                purpose="supply_chain_discovery",
+                text="Apple Vision Pro display suppliers",
+                retrievers=("graph",),
+            ),
+        ),
+    )
+
+    evidence = provider.retrieve_with_plan(
+        object(),
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=plan,
+        retrieval_tasks=tasks_from_plan(plan),
+    )
+
+    assert evidence == []
+    assert dense.calls == []
+    assert bm25.calls == []
 
 
 def test_legacy_retrieve_options_clears_stale_evidence_pack() -> None:

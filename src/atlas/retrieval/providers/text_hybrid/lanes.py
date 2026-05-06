@@ -72,6 +72,7 @@ def annotate_candidate(
     metadata = dict(candidate.metadata)
     lane_payload = {
         "provider": TEXT_HYBRID_PROVIDER,
+        "task_provider": task.provider,
         "lane": lane,
         "lane_family": family,
         "lane_rank": rank,
@@ -80,11 +81,20 @@ def annotate_candidate(
         "retrieval_task_id": task.task_id,
         "retrieval_unit_id": task.unit_id,
         "retrieval_unit_weight": task.weight,
+        "provider_status": task.provider_status,
+        "unsupported_reason": task.unsupported_reason,
+        "internal_lanes": list(task.internal_lanes),
+        "metadata_filter": dict(task.metadata_filter),
         "query_text": task.query_text,
         "must_have_terms": list(task.must_have_terms),
         "should_terms": list(task.should_terms),
     }
     metadata["provider"] = TEXT_HYBRID_PROVIDER
+    metadata["task_provider"] = task.provider
+    metadata["provider_status"] = task.provider_status
+    metadata["unsupported_reason"] = task.unsupported_reason
+    metadata["metadata_filter"] = dict(task.metadata_filter)
+    metadata["internal_lanes"] = list(task.internal_lanes)
     metadata["lane"] = lane
     metadata["lane_family"] = family
     metadata["lane_trace"] = lane_payload
@@ -118,20 +128,26 @@ def annotate_candidate(
 
 
 def lane_query_text(task: RetrievalTask, lane: str) -> str:
+    if lane == "dense":
+        return task.query_text
+    sparse_text = _sparse_query_text(task)
+    if lane == "bm25":
+        return sparse_text
     if lane == "metric_alias":
-        return _join_unique([task.query_text, *task.should_terms])
+        return sparse_text
     if lane == "section":
         sections = _metadata_terms(task, "section_terms", "sections")
-        return _join_unique([task.query_text, *sections, *task.must_have_terms])
+        section_filter = _metadata_filter_terms(task, "section_name", "section_title")
+        return _join_unique([sparse_text, *sections, *section_filter])
     if lane == "table":
         table_terms = _metadata_terms(task, "table_terms", "table_headers")
-        return _join_unique([task.query_text, "table row page", *table_terms])
-    return task.query_text
+        return _join_unique([sparse_text, "table row page", *table_terms])
+    return sparse_text
 
 
 def lane_filters(base_filters: dict | None, task: RetrievalTask) -> dict:
     filters = dict(base_filters or {})
-    filters.update(task.filters)
+    filters.update(task.metadata_filter)
     return filters
 
 
@@ -170,6 +186,21 @@ def _metadata_terms(task: RetrievalTask, *keys: str) -> list[str]:
     return terms
 
 
+def _metadata_filter_terms(task: RetrievalTask, *keys: str) -> list[str]:
+    terms: list[str] = []
+    for key in keys:
+        value = task.metadata_filter.get(key)
+        if isinstance(value, str):
+            terms.append(value)
+        elif isinstance(value, list | tuple | set):
+            terms.extend(str(item) for item in value if item)
+    return terms
+
+
+def _sparse_query_text(task: RetrievalTask) -> str:
+    return _join_unique([task.query_text, *task.should_terms])
+
+
 def _join_unique(values: list[str]) -> str:
     seen: set[str] = set()
     parts: list[str] = []
@@ -180,4 +211,3 @@ def _join_unique(values: list[str]) -> str:
         seen.add(text.lower())
         parts.append(text)
     return " ".join(parts)
-

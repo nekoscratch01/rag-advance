@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from atlas.core.config import Settings
+from atlas.core.config import Settings, enabled_query_providers
 from atlas.query_orchestrator.fallback import build_fallback_plan
 from atlas.query_orchestrator.llm_planner import LLMQueryPlanner
 from atlas.query_orchestrator.ontology import FinanceMetricOntology
@@ -20,7 +20,10 @@ class QueryOrchestrator:
         self.ontology = ontology or FinanceMetricOntology.load(
             settings.finance_metric_ontology_path
         )
-        self.validator = QueryPlanValidator(self.ontology)
+        self.validator = QueryPlanValidator(
+            self.ontology,
+            enabled_providers=enabled_query_providers(settings),
+        )
         self.llm_planner = llm_planner or LLMQueryPlanner(settings=settings, ontology=self.ontology)
 
     def plan(self, query: str, *, use_llm: bool = True) -> QueryPlan:
@@ -46,6 +49,12 @@ class QueryOrchestrator:
                 fallback_details = {
                     "warnings": list(validation.warnings),
                     "reasons": list(validation.reasons),
+                }
+            except ValueError as exc:
+                fallback_reason = "llm_validation_failed"
+                fallback_details = {
+                    "type": exc.__class__.__name__,
+                    "message": str(exc)[:500],
                 }
             except Exception as exc:
                 fallback_reason = "llm_exception"

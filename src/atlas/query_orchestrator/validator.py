@@ -18,8 +18,14 @@ class PlanValidation:
 
 
 class QueryPlanValidator:
-    def __init__(self, ontology: FinanceMetricOntology) -> None:
+    def __init__(
+        self,
+        ontology: FinanceMetricOntology,
+        *,
+        enabled_providers: tuple[str, ...] = ("hybrid",),
+    ) -> None:
         self.ontology = ontology
+        self.enabled_providers = enabled_providers
 
     def validate(self, plan: QueryPlan) -> PlanValidation:
         reasons: list[str] = []
@@ -49,8 +55,16 @@ class QueryPlanValidator:
             reasons.append("too_many_retrieval_units")
 
         for unit in plan.retrieval_units:
-            if "bm25" in unit.retrievers and unit.purpose in {"hyde", "query2doc"}:
-                reasons.append(f"hyde_not_allowed_for_bm25:{unit.unit_id}")
+            if len(unit.retrievers) != 1:
+                reasons.append(
+                    "compound_unit_must_be_split:"
+                    f"{unit.unit_id}:Split this into separate single-purpose unit_proposals"
+                )
+            provider = unit.retrievers[0] if unit.retrievers else "<missing>"
+            if provider not in self.enabled_providers:
+                reasons.append(f"provider_not_enabled:{unit.unit_id}:{provider}")
+            if provider == "hybrid" and unit.purpose in {"hyde", "query2doc"}:
+                reasons.append(f"hyde_not_allowed_for_hybrid_sparse:{unit.unit_id}")
             if unit.must_have_terms and not any(
                 _grounded(term, query_text) for term in unit.must_have_terms
             ):

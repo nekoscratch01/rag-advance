@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     query_planner_version: str = "query_planner_v1"
     finance_metric_ontology_path: str = "configs/finance_metric_ontology.yaml"
     query_planner_max_units: int = 6
+    query_planner_enabled_providers: str = "hybrid"
+    query_planner_retry_count: int = 2
 
     prompt_version: str = "v0.0-rag-answer-2026-05-03"
     default_top_k: int = 8
@@ -77,3 +79,12 @@ def get_settings() -> Settings:
 def bm25_sparse_enabled(settings: Settings) -> bool:
     retrieval_mode = settings.retrieval_mode.strip().lower()
     return settings.bm25_enabled or retrieval_mode in {"bm25", "hybrid", "lexical"}
+
+
+def enabled_query_providers(settings: Settings) -> tuple[str, ...]:
+    providers = tuple(
+        provider.strip().lower()
+        for provider in settings.query_planner_enabled_providers.split(",")
+        if provider.strip()
+    )
+    return providers or ("hybrid",)

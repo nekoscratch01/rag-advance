@@ -28,6 +28,10 @@ from atlas.retrieval.reranker import Reranker, rerank_with_context
 from atlas.retrieval.retrieval_task import RetrievalTask
 
 
+FUSION_BACKEND = "weighted_rrf"
+SUPPORTED_PROVIDER_STATUSES = frozenset({"ready", "supported", "ok", "enabled"})
+
+
 class TextHybridProvider:
     """Provider-local V1 text retrieval boundary with dense, lexical, and textual table lanes."""
 
@@ -63,6 +67,7 @@ class TextHybridProvider:
         self.max_context_tokens = max_context_tokens
         self.default_mode = default_mode
         self.last_evidence_pack = None
+        self.last_retrieval_trace: dict[str, Any] | None = None
         self.mode_switcher = ModeSwitchingRetriever(
             dense_retriever=dense_retriever,
             bm25_retriever=bm25_retriever,
@@ -104,6 +109,7 @@ class TextHybridProvider:
         options: dict | None = None,
     ) -> list[Evidence]:
         self.last_evidence_pack = None
+        self.last_retrieval_trace = None
         evidence = self.mode_switcher.retrieve_with_options(
             db,
             query=query,
@@ -162,15 +168,56 @@ class TextHybridProvider:
         retrieval_tasks: list[RetrievalTask],
     ) -> list[Candidate]:
         if top_k <= 0:
+            self.last_retrieval_trace = _provider_trace(
+                query_plan=query_plan,
+                task_traces=[],
+                lane_traces=[],
+                retrieval_latency_ms=0,
+                rrf_k=self.rrf_k,
+                fused_count=0,
+            )
             return []
 
         started = time.perf_counter()
         lane_candidate_groups: dict[str, list[Candidate]] = {}
         all_lane_candidates: list[Candidate] = []
+        task_traces: list[dict[str, Any]] = []
         lane_traces: list[dict[str, Any]] = []
         mode = _retrieval_mode(options, self.default_mode)
         for task in retrieval_tasks:
-            for lane_name in _lanes_for_mode(task.lanes, mode):
+            internal_lanes = _task_internal_lanes(task)
+            if not _task_is_supported(task):
+                task_traces.append(
+                    {
+                        "provider": task.provider,
+                        "text_hybrid_provider": TEXT_HYBRID_PROVIDER,
+                        "provider_status": task.provider_status,
+                        "unsupported_reason": task.unsupported_reason,
+                        "internal_lanes": list(internal_lanes),
+                        "task_id": task.task_id,
+                        "unit_id": task.unit_id,
+                        "status": "skipped",
+                        "returned": 0,
+                        "latency_ms": 0,
+                    }
+                )
+                continue
+            lane_names = _lanes_for_mode(internal_lanes, mode)
+            task_traces.append(
+                {
+                    "provider": task.provider,
+                    "text_hybrid_provider": TEXT_HYBRID_PROVIDER,
+                    "provider_status": task.provider_status,
+                    "unsupported_reason": task.unsupported_reason,
+                    "internal_lanes": list(internal_lanes),
+                    "lanes": list(lane_names),
+                    "task_id": task.task_id,
+                    "unit_id": task.unit_id,
+                    "status": "executed" if lane_names else "skipped",
+                    "skip_reason": None if lane_names else "no_supported_internal_lanes",
+                }
+            )
+            for lane_name in lane_names:
                 lane = self.lanes[lane_name]
                 lane_top_k = self._lane_top_k(lane_name, task.top_k, top_k)
                 lane_query = lane_query_text(task, lane_name)
@@ -184,11 +231,17 @@ class TextHybridProvider:
                 )
                 lane_trace = {
                     "provider": TEXT_HYBRID_PROVIDER,
+                    "task_provider": task.provider,
+                    "provider_status": task.provider_status,
+                    "unsupported_reason": task.unsupported_reason,
                     "lane": lane_name,
                     "lane_family": lane.family,
+                    "internal_lanes": list(internal_lanes),
+                    "fusion_backend": FUSION_BACKEND,
                     "task_id": task.task_id,
                     "unit_id": task.unit_id,
                     "query_text": lane_query,
+                    "metadata_filter": dict(task.metadata_filter),
                     "requested_top_k": lane_top_k,
                     "returned": len(current_lane_candidates),
                     "latency_ms": int((time.perf_counter() - lane_started) * 1000),
@@ -206,13 +259,23 @@ class TextHybridProvider:
             rrf_k=self.rrf_k,
             limit=fused_limit,
         )
+        retrieval_latency_ms = int((time.perf_counter() - started) * 1000)
+        self.last_retrieval_trace = _provider_trace(
+            query_plan=query_plan,
+            task_traces=task_traces,
+            lane_traces=lane_traces,
+            retrieval_latency_ms=retrieval_latency_ms,
+            rrf_k=self.rrf_k,
+            fused_count=len(fused),
+        )
         fused = [
             _with_candidate_provider_metadata(
                 candidate,
                 query_plan=query_plan,
+                provider_trace=self.last_retrieval_trace,
                 lane_traces=lane_traces,
                 lane_attributions=_lane_attributions_by_chunk(all_lane_candidates),
-                retrieval_latency_ms=int((time.perf_counter() - started) * 1000),
+                retrieval_latency_ms=retrieval_latency_ms,
             )
             for candidate in fused
         ]
@@ -320,9 +383,82 @@ def _lanes_for_mode(lanes: tuple[str, ...], mode: str) -> tuple[str, ...]:
     return _normalize_lanes(lanes)
 
 
+def _task_is_supported(task: RetrievalTask) -> bool:
+    return (
+        str(task.provider).strip().lower() == "hybrid"
+        and str(task.provider_status).strip().lower() in SUPPORTED_PROVIDER_STATUSES
+    )
+
+
+def _task_internal_lanes(task: RetrievalTask) -> tuple[str, ...]:
+    lanes = tuple(str(lane) for lane in task.internal_lanes if lane)
+    if not lanes:
+        lanes = tuple(str(lane) for lane in task.lanes if lane)
+    if lanes:
+        return lanes
+    if str(task.provider).strip().lower() != "hybrid":
+        return ()
+    return ("dense", "bm25")
+
+
+def _provider_trace(
+    *,
+    query_plan: QueryPlan,
+    task_traces: list[dict[str, Any]],
+    lane_traces: list[dict[str, Any]],
+    retrieval_latency_ms: int,
+    rrf_k: int,
+    fused_count: int,
+) -> dict[str, Any]:
+    input_lanes = _ordered_unique(
+        lane
+        for task in task_traces
+        for lane in task.get("internal_lanes", [])
+    )
+    executed_lanes = _ordered_unique(
+        str(item.get("lane")) for item in lane_traces if item.get("lane")
+    )
+    return {
+        "provider": TEXT_HYBRID_PROVIDER,
+        "provider_status": _provider_trace_status(task_traces),
+        "query_plan_id": query_plan.plan_id,
+        "planner": query_plan.planner,
+        "internal_lanes": input_lanes,
+        "executed_lanes": executed_lanes,
+        "tasks": task_traces,
+        "lanes": lane_traces,
+        "fusion_backend": FUSION_BACKEND,
+        "fusion": {
+            "backend": FUSION_BACKEND,
+            "strategy": FUSION_BACKEND,
+            "version": "current",
+            "rrf_k": rrf_k,
+            "input_lanes": executed_lanes,
+            "fused_count": fused_count,
+        },
+        "retrieval_latency_ms": retrieval_latency_ms,
+    }
+
+
+def _provider_trace_status(task_traces: list[dict[str, Any]]) -> str:
+    if not task_traces:
+        return "empty"
+    executed = any(item.get("status") == "executed" for item in task_traces)
+    skipped = any(item.get("status") == "skipped" for item in task_traces)
+    if executed and skipped:
+        return "partial"
+    if executed:
+        return "ready"
+    return "skipped"
+
+
 def _normalize_lanes(lanes: tuple[str, ...]) -> tuple[str, ...]:
     normalized = tuple(lane for lane in lanes if lane in SUPPORTED_LANES)
-    return normalized or ("dense", "bm25")
+    if normalized:
+        return normalized
+    if lanes:
+        return ()
+    return ("dense", "bm25")
 
 
 def _retrieval_mode(options: dict[str, Any], default_mode: str) -> str:
@@ -400,6 +536,7 @@ def _with_candidate_provider_metadata(
     candidate: Candidate,
     *,
     query_plan: QueryPlan,
+    provider_trace: dict[str, Any],
     lane_traces: list[dict[str, Any]],
     lane_attributions: dict[str, list[dict[str, Any]]],
     retrieval_latency_ms: int,
@@ -415,10 +552,9 @@ def _with_candidate_provider_metadata(
     if candidate_attributions:
         metadata["retrieval_tasks"] = candidate_attributions
         metadata["lane_trace"] = _canonical_lane_trace(candidate_attributions)
+    metadata["fusion_backend"] = FUSION_BACKEND
     metadata["text_hybrid_provider"] = {
-        "provider": TEXT_HYBRID_PROVIDER,
-        "query_plan_id": query_plan.plan_id,
-        "planner": query_plan.planner,
+        **provider_trace,
         "lanes": lane_traces,
         "retrieval_latency_ms": retrieval_latency_ms,
     }
@@ -449,6 +585,7 @@ def _candidate_lane_payloads(candidate: Candidate) -> list[dict[str, Any]]:
         {
             "provider": TEXT_HYBRID_PROVIDER,
             "lane": candidate.lane,
+            "fusion_backend": FUSION_BACKEND,
             "lane_rank": candidate.lane_rank,
             "lane_score": candidate.lane_score,
             "lane_weight": candidate.lane_weight,
@@ -463,14 +600,28 @@ def _canonical_lane_trace(attributions: list[dict[str, Any]]) -> dict[str, Any]:
     lanes = _ordered_unique(
         str(item.get("lane")) for item in attributions if item.get("lane")
     )
+    provider_statuses = _ordered_unique(
+        str(item.get("provider_status"))
+        for item in attributions
+        if item.get("provider_status")
+    )
+    internal_lanes = _ordered_unique(
+        str(lane)
+        for item in attributions
+        for lane in item.get("internal_lanes", [])
+    )
     if len(attributions) == 1:
         payload = dict(attributions[0])
         payload["lanes"] = lanes
+        payload["fusion_backend"] = FUSION_BACKEND
         return payload
     return {
         "provider": TEXT_HYBRID_PROVIDER,
         "lane": "multi_lane",
         "lanes": lanes,
+        "provider_statuses": provider_statuses,
+        "internal_lanes": internal_lanes,
+        "fusion_backend": FUSION_BACKEND,
         "lane_attributions": attributions,
     }
 
@@ -651,11 +802,23 @@ def _canonical_weighted_parent_trace(candidates: list[Candidate]) -> dict[str, A
     parent_lanes = _ordered_unique(
         str(item.get("lane")) for item in parent_child_contributions if item.get("lane")
     )
+    provider_statuses = _ordered_unique(
+        str(item.get("provider_status"))
+        for item in parent_child_attributions
+        if item.get("provider_status")
+    )
+    internal_lanes = _ordered_unique(
+        str(lane)
+        for item in parent_child_attributions
+        for lane in item.get("internal_lanes", [])
+    )
     fusion_score = float(best.fusion_score or 0.0)
     weighted_contribution = float(best.weighted_contribution or fusion_score)
     lane = "multi_lane" if len(lanes) > 1 else (lanes[0] if lanes else best.lane)
     fusion = {
         "strategy": "weighted_rrf",
+        "backend": FUSION_BACKEND,
+        "version": "current",
         "lane": lane,
         "lanes": lanes,
         "parent_lanes": parent_lanes,
@@ -672,6 +835,10 @@ def _canonical_weighted_parent_trace(candidates: list[Candidate]) -> dict[str, A
         "provider": TEXT_HYBRID_PROVIDER,
         "retrieval_provider": TEXT_HYBRID_PROVIDER,
         "provider_contract": "TextHybridProvider",
+        "provider_status": provider_statuses[0] if len(provider_statuses) == 1 else "mixed",
+        "provider_statuses": provider_statuses,
+        "internal_lanes": internal_lanes,
+        "fusion_backend": FUSION_BACKEND,
         "lane": lane,
         "lanes": lanes,
         "parent_lanes": parent_lanes,
@@ -691,6 +858,9 @@ def _canonical_weighted_parent_trace(candidates: list[Candidate]) -> dict[str, A
             "lane": lane,
             "lanes": lanes,
             "parent_lanes": parent_lanes,
+            "provider_statuses": provider_statuses,
+            "internal_lanes": internal_lanes,
+            "fusion_backend": FUSION_BACKEND,
             "lane_attributions": lane_attributions,
             "parent_child_attributions": parent_child_attributions,
         },

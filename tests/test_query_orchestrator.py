@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from pydantic import SecretStr
@@ -21,8 +22,24 @@ class _FakeLLMPlanner:
     def available(self) -> bool:
         return self._available
 
-    def plan(self, _query: str) -> QueryPlan:
+    def plan(self, _query: str, *, validation_feedback=None) -> QueryPlan:
         return self._plan
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict) -> None:
+        self.output_text = json.dumps(payload)
+
+
+class _FakeResponses:
+    def __init__(self, payloads: list[dict]) -> None:
+        self.payloads = payloads
+        self.calls = []
+
+    def create(self, **request):
+        self.calls.append(request)
+        index = min(len(self.calls) - 1, len(self.payloads) - 1)
+        return _FakeResponse(self.payloads[index])
 
 
 def test_fallback_plan_builds_grounded_units_without_openai_key() -> None:
@@ -39,6 +56,7 @@ def test_fallback_plan_builds_grounded_units_without_openai_key() -> None:
     assert plan.validation_status == "validated"
     assert plan.metrics[0].canonical_name == "capital_expenditure"
     assert any(unit.purpose == "metric_alias" for unit in plan.retrieval_units)
+    assert all(unit.retrievers == ("hybrid",) for unit in plan.retrieval_units)
     assert all(unit.text for unit in plan.retrieval_units)
 
 
@@ -198,6 +216,28 @@ def test_validator_rejects_retrieval_unit_with_untriggered_metric_alias() -> Non
     assert "ungrounded_metric_alias:u0:cash and cash equivalents" in validation.reasons
 
 
+def test_validator_rejects_disabled_sql_or_graph_provider() -> None:
+    ontology = FinanceMetricOntology.load(ONTOLOGY_PATH)
+    validator = QueryPlanValidator(ontology, enabled_providers=("hybrid",))
+    plan = QueryPlan(
+        plan_id="plan_sql",
+        original_query="Compare Apple and Microsoft 2023 R&D.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_sql",
+                purpose="numerical_aggregation",
+                text="Apple Microsoft R&D 2023",
+                retrievers=("sql",),
+            ),
+        ),
+    )
+
+    validation = validator.validate(plan)
+
+    assert validation.ok is False
+    assert "provider_not_enabled:u_sql:sql" in validation.reasons
+
+
 def test_llm_planner_rejects_unknown_raw_metric_before_validation() -> None:
     settings = Settings(
         openai_api_key=SecretStr("test-key"),
@@ -212,14 +252,14 @@ def test_llm_planner_rejects_unknown_raw_metric_before_validation() -> None:
         "entities": [],
         "periods": [],
         "metrics": [{"canonical_name": "made_up_metric"}],
-        "filters": {},
+        "metadata_filter": {},
         "retrieval_units": [
             {
                 "unit_id": "u0",
                 "purpose": "original",
                 "text": "What is the FY2018 capital expenditure amount for 3M?",
-                "retrievers": ["dense", "bm25"],
-                "filters": {},
+                "retrievers": ["hybrid"],
+                "metadata_filter": {},
                 "must_have_terms": [],
                 "should_terms": [],
                 "top_k": 10,
@@ -252,12 +292,14 @@ def test_llm_planner_rejects_blank_metric_with_unknown_source_text() -> None:
         "entities": [],
         "periods": [],
         "metrics": [{"canonical_name": "", "source_text": "EBITDA"}],
+        "metadata_filter": {},
         "retrieval_units": [
             {
                 "unit_id": "u0",
                 "purpose": "original",
                 "text": "What was 3M revenue in FY2018?",
-                "retrievers": ["dense", "bm25"],
+                "retrievers": ["hybrid"],
+                "metadata_filter": {},
                 "must_have_terms": [],
                 "should_terms": [],
                 "top_k": 10,
@@ -272,6 +314,64 @@ def test_llm_planner_rejects_blank_metric_with_unknown_source_text() -> None:
         assert "EBITDA" in str(exc)
     else:
         raise AssertionError("expected blank unknown metric to be rejected")
+
+
+def test_llm_planner_retries_with_validation_feedback(monkeypatch) -> None:
+    invalid_payload = {
+        "standalone_query": "What was 3M revenue in FY2018?",
+        "query_type": "fact_lookup",
+        "entities": [],
+        "periods": [],
+        "metrics": [],
+        "filters": {},
+        "retrieval_units": [],
+    }
+    valid_payload = {
+        "standalone_query": "What was 3M revenue in FY2018?",
+        "query_type": "fact_lookup",
+        "entities": [],
+        "periods": [],
+        "metrics": [],
+        "metadata_filter": {},
+        "retrieval_units": [
+            {
+                "unit_id": "u0",
+                "purpose": "original",
+                "text": "What was 3M revenue in FY2018?",
+                "retrievers": ["hybrid"],
+                "metadata_filter": {},
+                "must_have_terms": [],
+                "should_terms": [],
+                "top_k": 10,
+                "weight": 1.0,
+            }
+        ],
+    }
+    created_clients = []
+
+    class _FakeOpenAI:
+        def __init__(self, **_kwargs) -> None:
+            self.responses = _FakeResponses([invalid_payload, valid_payload])
+            created_clients.append(self)
+
+    monkeypatch.setattr("atlas.query_orchestrator.llm_planner.OpenAI", _FakeOpenAI)
+    settings = Settings(
+        openai_api_key=SecretStr("test-key"),
+        finance_metric_ontology_path=str(ONTOLOGY_PATH),
+    )
+    ontology = FinanceMetricOntology.load(ONTOLOGY_PATH)
+    planner = LLMQueryPlanner(settings=settings, ontology=ontology)
+
+    plan = planner.plan("What was 3M revenue in FY2018?")
+
+    calls = created_clients[0].responses.calls
+    retriever_enum = calls[0]["text"]["format"]["schema"]["properties"]["retrieval_units"][
+        "items"
+    ]["properties"]["retrievers"]["items"]["enum"]
+    assert plan.retrieval_units[0].retrievers == ("hybrid",)
+    assert retriever_enum == ["hybrid"]
+    assert len(calls) == 2
+    assert "filters is not supported" in calls[1]["input"]
 
 
 def test_ontology_does_not_match_cash_inside_operating_cash_flow() -> None:

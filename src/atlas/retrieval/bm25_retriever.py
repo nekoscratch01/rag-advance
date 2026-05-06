@@ -126,16 +126,64 @@ class BM25Retriever:
 
 
 def _build_filter(filters: dict) -> models.Filter | None:
+    conditions = _filter_conditions(filters)
+    return models.Filter(must=conditions) if conditions else None
+
+
+def _filter_conditions(filters: dict) -> list[models.FieldCondition]:
+    conditions: list[models.FieldCondition] = []
     document_ids = filters.get("document_ids")
-    if not document_ids:
-        return None
-    conditions = [
-        models.FieldCondition(
-            key="document_id",
-            match=models.MatchAny(any=list(document_ids)),
+    if document_ids:
+        conditions.append(
+            models.FieldCondition(
+                key="document_id",
+                match=models.MatchAny(any=list(document_ids)),
+            )
         )
-    ]
-    return models.Filter(must=conditions)
+    for key, value in filters.items():
+        if key == "document_ids" or value is None:
+            continue
+        payload_key = _payload_key(key)
+        if payload_key is None:
+            continue
+        if isinstance(value, list | tuple | set):
+            values = [item for item in value if item is not None]
+            if values:
+                conditions.append(
+                    models.FieldCondition(
+                        key=payload_key,
+                        match=models.MatchAny(any=values),
+                    )
+                )
+            continue
+        conditions.append(
+            models.FieldCondition(
+                key=payload_key,
+                match=models.MatchValue(value=value),
+            )
+        )
+    return conditions
+
+
+def _payload_key(key: str) -> str | None:
+    payload_key = {
+        "section_name": "section_title",
+        "document_type": "file_type",
+        "filing_type": "file_type",
+    }.get(key, key)
+    supported = {
+        "document_id",
+        "parent_id",
+        "title",
+        "source_uri",
+        "file_type",
+        "section_title",
+        "page_start",
+        "page_end",
+        "language",
+        "embedding_model",
+    }
+    return payload_key if payload_key in supported else None
 
 
 def _candidate_metadata(chunk) -> dict:

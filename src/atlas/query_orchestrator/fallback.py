@@ -88,7 +88,7 @@ def _build_units(
             unit_id="u0",
             purpose="original",
             text=query,
-            retrievers=("dense", "bm25"),
+            retrievers=("hybrid",),
             top_k=10,
             weight=1.0,
         )
@@ -111,12 +111,13 @@ def _build_units(
                 unit_id="u1",
                 purpose="metric_alias",
                 text=" ".join(part for part in (entity_text, period_text, alias_text) if part),
-                retrievers=("bm25", "metric_alias"),
+                retrievers=("hybrid",),
                 must_have_terms=anchor_terms,
                 should_terms=metric.aliases[:4],
                 top_k=10,
                 weight=1.5,
                 lane_weights={"bm25": 1.2, "metric_alias": 1.5},
+                metadata={"internal_lanes": ["bm25", "metric_alias"]},
             )
         )
     if periods and len(units) < max_units:
@@ -126,11 +127,12 @@ def _build_units(
                 unit_id=f"u{len(units)}",
                 purpose="period_anchor",
                 text=" ".join([query, *period_terms]),
-                retrievers=("bm25",),
+                retrievers=("hybrid",),
                 must_have_terms=period_terms,
                 top_k=10,
                 weight=1.2,
                 lane_weights={"bm25": 1.3},
+                metadata={"internal_lanes": ["bm25"]},
             )
         )
     return units[:max_units]

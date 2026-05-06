@@ -1,0 +1,1186 @@
+{
+  "case_count": 5,
+  "duration_seconds": 0.058,
+  "failure_buckets": {
+    "bucket_counts": {
+      "answer_terms_miss@3": 3,
+      "expected_evidence_dropped_by_token_budget": 2,
+      "page_miss@3": 3,
+      "planned_not_run": 5
+    },
+    "buckets": {
+      "answer_terms_miss@3": [
+        {
+          "case_id": "smoke_ibm_dividends_2021",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        }
+      ],
+      "expected_evidence_dropped_by_token_budget": [
+        {
+          "case_id": "smoke_3m_capex_2018",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        }
+      ],
+      "page_miss@3": [
+        {
+          "case_id": "smoke_ibm_dividends_2021",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        }
+      ],
+      "planned_not_run": [
+        {
+          "case_id": "smoke_3m_capex_2018",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        }
+      ]
+    }
+  },
+  "finished_at": "2026-05-06T05:29:15.866620+00:00",
+  "generated_at": "2026-05-06T05:29:15.866620+00:00",
+  "groups": {
+    "candidate_shape": [
+      "shape_child_chunk",
+      "shape_parent_block",
+      "shape_page_neighborhood",
+      "shape_token_budget_18"
+    ],
+    "filter_strategy": [
+      "filter_no_hard_filter",
+      "filter_metadata_only",
+      "filter_must_have_hard",
+      "filter_must_terms_sparse_boost"
+    ],
+    "fusion": [
+      "fusion_dense_only",
+      "fusion_sparse_only",
+      "fusion_python_weighted_rrf",
+      "fusion_qdrant_rrf_planned"
+    ],
+    "query_rewrite": [
+      "rewrite_unit_text",
+      "rewrite_should_terms",
+      "rewrite_ontology_aliases"
+    ],
+    "reranker_input": [
+      "rerank_original_query_candidate",
+      "rerank_current_unit_candidate",
+      "rerank_local_terms_candidate",
+      "rerank_full_plan_summary_candidate",
+      "rerank_full_plan_all_units_candidate"
+    ]
+  },
+  "notes": [
+    "offline synthetic smoke; not a replacement for FinanceBench retrieval-only or generated-answer evaluation",
+    "does not call Postgres, Qdrant, OpenAI, or local CrossEncoder models"
+  ],
+  "ontology_path": "configs/finance_metric_ontology.yaml",
+  "run_id": "smoke_20260506",
+  "started_at": "2026-05-06T05:29:15.808422+00:00",
+  "variant_count": 20,
+  "variant_results": {
+    "filter_metadata_only": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "filter_must_have_hard": {
+      "completed_cases": 5,
+      "failure_counts": {
+        "answer_terms_miss@3": 1,
+        "page_miss@3": 1
+      },
+      "metrics": {
+        "MRR_answer_terms": 0.8,
+        "MRR_doc": 1.0,
+        "MRR_page": 0.8,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "filter_must_terms_sparse_boost": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "filter_no_hard_filter": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "fusion_dense_only": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 0.9,
+        "MRR_doc": 1.0,
+        "MRR_page": 0.9,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "fusion_python_weighted_rrf": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "fusion_qdrant_rrf_planned": {
+      "completed_cases": 0,
+      "failure_counts": {
+        "planned_not_run": 5
+      },
+      "metrics": {
+        "MRR_answer_terms": null,
+        "MRR_doc": null,
+        "MRR_page": null,
+        "answer_terms_hit@1": {
+          "count": 0,
+          "hits": 0,
+          "rate": null
+        },
+        "answer_terms_hit@3": {
+          "count": 0,
+          "hits": 0,
+          "rate": null
+        },
+        "doc_hit@1": {
+          "count": 0,
+          "hits": 0,
+          "rate": null
+        },
+        "doc_hit@3": {
+          "count": 0,
+          "hits": 0,
+          "rate": null
+        },
+        "page_hit@1": {
+          "count": 0,
+          "hits": 0,
+          "rate": null
+        },
+        "page_hit@3": {
+          "count": 0,
+          "hits": 0,
+          "rate": null
+        },
+        "parent_hit@1": {
+          "count": 0,
+          "hits": 0,
+          "rate": null
+        },
+        "parent_hit@3": {
+          "count": 0,
+          "hits": 0,
+          "rate": null
+        }
+      },
+      "planned_cases": 5,
+      "total_cases": 5
+    },
+    "fusion_sparse_only": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "rerank_current_unit_candidate": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 0.9,
+        "MRR_doc": 1.0,
+        "MRR_page": 0.9,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "rerank_full_plan_all_units_candidate": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "rerank_full_plan_summary_candidate": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 0.9,
+        "MRR_doc": 1.0,
+        "MRR_page": 0.9,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "rerank_local_terms_candidate": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "rerank_original_query_candidate": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 0.9,
+        "MRR_doc": 1.0,
+        "MRR_page": 0.9,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "rewrite_ontology_aliases": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "rewrite_should_terms": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "rewrite_unit_text": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 0.9,
+        "MRR_doc": 1.0,
+        "MRR_page": 0.9,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 4,
+          "rate": 0.8
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "shape_child_chunk": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "shape_page_neighborhood": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "shape_parent_block": {
+      "completed_cases": 5,
+      "failure_counts": {},
+      "metrics": {
+        "MRR_answer_terms": 1.0,
+        "MRR_doc": 1.0,
+        "MRR_page": 1.0,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    },
+    "shape_token_budget_18": {
+      "completed_cases": 5,
+      "failure_counts": {
+        "answer_terms_miss@3": 2,
+        "expected_evidence_dropped_by_token_budget": 2,
+        "page_miss@3": 2
+      },
+      "metrics": {
+        "MRR_answer_terms": 0.6,
+        "MRR_doc": 1.0,
+        "MRR_page": 0.6,
+        "answer_terms_hit@1": {
+          "count": 5,
+          "hits": 3,
+          "rate": 0.6
+        },
+        "answer_terms_hit@3": {
+          "count": 5,
+          "hits": 3,
+          "rate": 0.6
+        },
+        "doc_hit@1": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "doc_hit@3": {
+          "count": 5,
+          "hits": 5,
+          "rate": 1.0
+        },
+        "page_hit@1": {
+          "count": 5,
+          "hits": 3,
+          "rate": 0.6
+        },
+        "page_hit@3": {
+          "count": 5,
+          "hits": 3,
+          "rate": 0.6
+        },
+        "parent_hit@1": {
+          "count": 5,
+          "hits": 3,
+          "rate": 0.6
+        },
+        "parent_hit@3": {
+          "count": 5,
+          "hits": 3,
+          "rate": 0.6
+        }
+      },
+      "planned_cases": 0,
+      "total_cases": 5
+    }
+  }
+}

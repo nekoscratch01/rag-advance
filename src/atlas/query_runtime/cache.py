@@ -255,7 +255,7 @@ def _stable_plan_payload(query_plan: Mapping[str, Any]) -> dict[str, Any]:
             "entities",
             "periods",
             "metrics",
-            "filters",
+            "metadata_filter",
             "retrieval_units",
             "risk_flags",
             "budget",
@@ -278,14 +278,18 @@ def _stable_tasks_payload(value: Any) -> list[Any]:
                 key: task.get(key)
                 for key in (
                     "unit_id",
+                    "provider",
                     "query_text",
                     "lanes",
-                    "filters",
+                    "metadata_filter",
                     "must_have_terms",
                     "should_terms",
                     "top_k",
                     "weight",
                     "lane_weights",
+                    "provider_status",
+                    "unsupported_reason",
+                    "internal_lanes",
                     "metadata",
                 )
             }
