@@ -114,6 +114,16 @@ class QueryRun(Base):
 
     retrieval_events: Mapped[list["RetrievalEvent"]] = relationship(back_populates="query_run")
     generation_events: Mapped[list["GenerationEvent"]] = relationship(back_populates="query_run")
+    query_plans: Mapped[list["QueryPlanRecord"]] = relationship(back_populates="query_run")
+    retrieval_tasks: Mapped[list["RetrievalTaskRecord"]] = relationship(back_populates="query_run")
+    retrieval_results: Mapped[list["RetrievalResultRecord"]] = relationship(back_populates="query_run")
+    candidates: Mapped[list["CandidateRecord"]] = relationship(back_populates="query_run")
+    evidence_blocks: Mapped[list["EvidenceBlockRecord"]] = relationship(back_populates="query_run")
+    evidence_packs: Mapped[list["EvidencePackRecord"]] = relationship(back_populates="query_run")
+    evidence_evaluations: Mapped[list["EvidenceEvaluationRecord"]] = relationship(back_populates="query_run")
+    answers: Mapped[list["AnswerRecord"]] = relationship(back_populates="query_run")
+    citations: Mapped[list["CitationRecord"]] = relationship(back_populates="query_run")
+    citation_verifications: Mapped[list["CitationVerificationRecord"]] = relationship(back_populates="query_run")
 
 
 class RetrievalEvent(Base):
@@ -147,6 +157,142 @@ class GenerationEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     query_run: Mapped[QueryRun] = relationship(back_populates="generation_events")
+
+
+class QueryPlanRecord(Base):
+    __tablename__ = "query_plans"
+    __table_args__ = (Index("ix_query_plans_query_id", "query_id"),)
+
+    record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    plan_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    planner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="query_plans")
+
+
+class RetrievalTaskRecord(Base):
+    __tablename__ = "retrieval_tasks"
+    __table_args__ = (Index("ix_retrieval_tasks_query_id", "query_id"),)
+
+    record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    unit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="retrieval_tasks")
+
+
+class RetrievalResultRecord(Base):
+    __tablename__ = "retrieval_results"
+    __table_args__ = (Index("ix_retrieval_results_query_id", "query_id"),)
+
+    record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="retrieval_results")
+
+
+class CandidateRecord(Base):
+    __tablename__ = "candidates"
+    __table_args__ = (Index("ix_candidates_query_id", "query_id"),)
+
+    record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    chunk_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="candidates")
+
+
+class EvidenceBlockRecord(Base):
+    __tablename__ = "evidence_blocks"
+    __table_args__ = (Index("ix_evidence_blocks_query_id", "query_id"),)
+
+    record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    evidence_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    chunk_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="evidence_blocks")
+
+
+class EvidencePackRecord(Base):
+    __tablename__ = "evidence_packs"
+    __table_args__ = (Index("ix_evidence_packs_query_id", "query_id"),)
+
+    record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    pack_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="evidence_packs")
+
+
+class EvidenceEvaluationRecord(Base):
+    __tablename__ = "evidence_evaluations"
+    __table_args__ = (Index("ix_evidence_evaluations_query_id", "query_id"),)
+
+    record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="evidence_evaluations")
+
+
+class AnswerRecord(Base):
+    __tablename__ = "answers"
+    __table_args__ = (Index("ix_answers_query_id", "query_id"),)
+
+    record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    confidence: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="answers")
+
+
+class CitationRecord(Base):
+    __tablename__ = "citations"
+    __table_args__ = (Index("ix_citations_query_id", "query_id"),)
+
+    record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    citation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    evidence_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="citations")
+
+
+class CitationVerificationRecord(Base):
+    __tablename__ = "citation_verifications"
+    __table_args__ = (Index("ix_citation_verifications_query_id", "query_id"),)
+
+    record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="citation_verifications")
 
 
 class QueryCache(Base):

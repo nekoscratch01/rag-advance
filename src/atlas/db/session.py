@@ -56,6 +56,112 @@ def _apply_lightweight_migrations() -> None:
         )
         """,
         "create index if not exists ix_query_cache_expires_at on query_cache (expires_at)",
+        """
+        create table if not exists query_plans (
+            record_id varchar(64) primary key,
+            query_id varchar(64) not null references query_runs(query_id),
+            plan_id varchar(64),
+            planner varchar(128),
+            payload_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "create index if not exists ix_query_plans_query_id on query_plans (query_id)",
+        """
+        create table if not exists retrieval_tasks (
+            record_id varchar(64) primary key,
+            query_id varchar(64) not null references query_runs(query_id),
+            task_id varchar(64),
+            unit_id varchar(64),
+            payload_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "create index if not exists ix_retrieval_tasks_query_id on retrieval_tasks (query_id)",
+        """
+        create table if not exists retrieval_results (
+            record_id varchar(64) primary key,
+            query_id varchar(64) not null references query_runs(query_id),
+            status varchar(64),
+            payload_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "create index if not exists ix_retrieval_results_query_id on retrieval_results (query_id)",
+        """
+        create table if not exists candidates (
+            record_id varchar(64) primary key,
+            query_id varchar(64) not null references query_runs(query_id),
+            chunk_id varchar(64),
+            rank integer,
+            payload_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "create index if not exists ix_candidates_query_id on candidates (query_id)",
+        """
+        create table if not exists evidence_blocks (
+            record_id varchar(64) primary key,
+            query_id varchar(64) not null references query_runs(query_id),
+            evidence_id varchar(64),
+            chunk_id varchar(64),
+            rank integer,
+            payload_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "create index if not exists ix_evidence_blocks_query_id on evidence_blocks (query_id)",
+        """
+        create table if not exists evidence_packs (
+            record_id varchar(64) primary key,
+            query_id varchar(64) not null references query_runs(query_id),
+            pack_id varchar(64),
+            payload_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "create index if not exists ix_evidence_packs_query_id on evidence_packs (query_id)",
+        """
+        create table if not exists evidence_evaluations (
+            record_id varchar(64) primary key,
+            query_id varchar(64) not null references query_runs(query_id),
+            status varchar(64),
+            payload_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "create index if not exists ix_evidence_evaluations_query_id on evidence_evaluations (query_id)",
+        """
+        create table if not exists answers (
+            record_id varchar(64) primary key,
+            query_id varchar(64) not null references query_runs(query_id),
+            confidence varchar(32),
+            payload_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "create index if not exists ix_answers_query_id on answers (query_id)",
+        """
+        create table if not exists citations (
+            record_id varchar(64) primary key,
+            query_id varchar(64) not null references query_runs(query_id),
+            citation_id varchar(64),
+            evidence_id varchar(64),
+            payload_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "create index if not exists ix_citations_query_id on citations (query_id)",
+        """
+        create table if not exists citation_verifications (
+            record_id varchar(64) primary key,
+            query_id varchar(64) not null references query_runs(query_id),
+            status varchar(64),
+            payload_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "create index if not exists ix_citation_verifications_query_id on citation_verifications (query_id)",
     ]
     with engine.begin() as conn:
         for statement in statements:

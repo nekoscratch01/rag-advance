@@ -214,6 +214,7 @@ class QueryRuntime:
                 latency_ms=latency_ms,
                 error_message=exc.error_message,
             )
+            _attach_query_details(query_run, {})
             repositories.add_query_trace(db, query_run, retrieval_events, None)
             db.commit()
             exc.trace_id = trace_id
@@ -258,6 +259,7 @@ class QueryRuntime:
                 latency_ms=latency_ms,
                 error_message=atlas_error.error_message,
             )
+            _attach_query_details(query_run, {})
             repositories.add_query_trace(db, query_run, retrieval_events, None)
             db.commit()
             raise atlas_error from exc
@@ -511,6 +513,7 @@ class QueryRuntime:
                 status="failed",
                 error_message=exc.error_message,
             )
+            _attach_query_details(query_run, {})
             repositories.add_query_trace(db, query_run, retrieval_events, generation_event)
             db.commit()
             exc.trace_id = trace_id

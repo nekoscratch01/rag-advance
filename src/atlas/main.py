@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
                 f"GET {settings.api_prefix}/health",
                 f"POST {settings.api_prefix}/documents/ingest",
                 f"POST {settings.api_prefix}/query",
+                f"POST {settings.api_prefix}/retrieve",
                 f"GET {settings.api_prefix}/query/{{query_id}}",
                 f"GET {settings.api_prefix}/query/{{query_id}}/trace",
                 f"POST {settings.api_prefix}/eval/run",
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix=settings.api_prefix)
     app.include_router(documents.router, prefix=settings.api_prefix)
     app.include_router(query.router, prefix=settings.api_prefix)
+    app.include_router(query.retrieve_router, prefix=settings.api_prefix)
     app.include_router(eval.router, prefix=settings.api_prefix)
     app.include_router(observability.router, prefix=settings.api_prefix)
     app.include_router(admin.router, prefix=settings.api_prefix)

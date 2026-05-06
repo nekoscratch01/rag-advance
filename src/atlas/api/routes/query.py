@@ -5,15 +5,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from atlas.api.dependencies import get_query_orchestrator, get_query_runtime
-from atlas.db.repositories import get_chunks_by_ids, get_query_run
+from atlas.db.repositories import get_chunks_by_ids, get_query_run, get_v1_trace_family
 from atlas.db.session import get_db
 from atlas.query_orchestrator.schema import serialize_query_plan
 from atlas.query_orchestrator.service import QueryOrchestrator
-from atlas.query_runtime.service import QueryRuntime
+from atlas.query_runtime.service import QueryRuntime, _retrieve_evidence
 from atlas.query_runtime.trace_logger import get_query_trace_metadata
 from atlas.retrieval.retrieval_task import serialize_retrieval_task, tasks_from_plan
 
 router = APIRouter(prefix="/query", tags=["query"])
+retrieve_router = APIRouter(prefix="/retrieve", tags=["retrieval"])
 
 
 class QueryRequest(BaseModel):
@@ -57,6 +58,38 @@ def run_query(
         "confidence": result.confidence,
         "citations": result.citations,
         "details": result.details if request.options.get("return_trace") else {},
+    }
+
+
+@retrieve_router.post("")
+def retrieve_only(
+    request: QueryRequest,
+    db: Session = Depends(get_db),
+    runtime: QueryRuntime = Depends(get_query_runtime),
+    orchestrator: QueryOrchestrator = Depends(get_query_orchestrator),
+) -> dict[str, Any]:
+    use_llm = not _truthy(request.options.get("query_plan_fallback_only"))
+    plan = orchestrator.plan(request.query, use_llm=use_llm)
+    tasks = tasks_from_plan(plan)
+    top_k = request.top_k or runtime.settings.default_top_k
+    evidence = _retrieve_evidence(
+        runtime.retriever,
+        db,
+        query=request.query,
+        top_k=min(top_k, runtime.settings.max_top_k),
+        filters=request.filters,
+        options={
+            **request.options,
+            "query_plan": serialize_query_plan(plan),
+            "retrieval_tasks": [serialize_retrieval_task(task) for task in tasks],
+        },
+        query_plan=plan,
+        retrieval_tasks=tasks,
+    )
+    return {
+        "query_plan": serialize_query_plan(plan),
+        "retrieval_tasks": [serialize_retrieval_task(task) for task in tasks],
+        "evidence": [_serialize_evidence(item) for item in evidence],
     }
 
 
@@ -132,6 +165,7 @@ def get_query_trace(query_id: str, db: Session = Depends(get_db)) -> dict[str, A
         "cache": _trace_cache(trace_metadata),
         "stages": _trace_stages(trace_metadata, retrieval_events, generation_events),
         "metadata": _trace_route_metadata(trace_metadata),
+        "v1_trace": get_v1_trace_family(db, query_run.query_id),
         "model": {
             "model_name": query_run.model_name,
             "prompt_version": query_run.prompt_version,
@@ -203,6 +237,27 @@ def _serialize_retrieval_event(event, chunk) -> dict[str, Any]:
         }
     )
     return payload
+
+
+def _serialize_evidence(item) -> dict[str, Any]:
+    return {
+        "evidence_id": item.evidence_id,
+        "document_id": item.document_id,
+        "chunk_id": item.chunk_id,
+        "text": item.text,
+        "source_title": item.source_title,
+        "source_uri": item.source_uri,
+        "section_title": item.section_title,
+        "page_start": item.page_start,
+        "page_end": item.page_end,
+        "retrieval_score": item.retrieval_score,
+        "rank": item.rank,
+        "token_count": item.token_count,
+        "metadata": item.metadata,
+        "parent_id": item.parent_id,
+        "child_ids": list(item.child_ids),
+        "retrieved_by": list(item.retrieved_by),
+    }
 
 
 def _preview(text: str, limit: int = 240) -> str:
