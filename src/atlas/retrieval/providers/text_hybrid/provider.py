@@ -11,7 +11,7 @@ from atlas.query_orchestrator.schema import QueryPlan
 from atlas.query_runtime.evidence_builder import build_evidence_from_candidates
 from atlas.retrieval.candidate import Candidate
 from atlas.retrieval.evidence import Evidence
-from atlas.retrieval.fusion import DEFAULT_RRF_K, rrf_fuse
+from atlas.retrieval.fusion import DEFAULT_RRF_K, WeightedRRFInput, weighted_rrf_fuse
 from atlas.retrieval.hybrid_retriever import HybridRetriever
 from atlas.retrieval.mode_switching import ModeSwitchingRetriever
 from atlas.retrieval.providers.text_hybrid.lanes import (
@@ -154,8 +154,7 @@ class TextHybridProvider:
             return []
 
         started = time.perf_counter()
-        dense_candidates: list[Candidate] = []
-        lexical_candidates: list[Candidate] = []
+        lane_candidate_groups: dict[str, list[Candidate]] = {}
         all_lane_candidates: list[Candidate] = []
         lane_traces: list[dict[str, Any]] = []
         mode = _retrieval_mode(options, self.default_mode)
@@ -185,15 +184,14 @@ class TextHybridProvider:
                 }
                 lane_traces.append(lane_trace)
                 all_lane_candidates.extend(current_lane_candidates)
-                if lane.family == "dense":
-                    dense_candidates.extend(current_lane_candidates)
-                else:
-                    lexical_candidates.extend(current_lane_candidates)
+                lane_candidate_groups.setdefault(lane_name, []).extend(current_lane_candidates)
 
         fused_limit = self.rrf_top_k if self._reranker_enabled(options) else top_k
-        fused = rrf_fuse(
-            dense_candidates,
-            lexical_candidates,
+        fused = weighted_rrf_fuse(
+            [
+                WeightedRRFInput(lane=lane_name, candidates=candidates)
+                for lane_name, candidates in lane_candidate_groups.items()
+            ],
             rrf_k=self.rrf_k,
             limit=fused_limit,
         )
@@ -253,8 +251,13 @@ class TextHybridProvider:
         top_k: int,
     ) -> list[Evidence]:
         if self.max_context_tokens is not None:
+            trace_by_parent = _weighted_trace_by_parent(candidates)
             return [
-                _with_provider_metadata(item, legacy_mode=False)
+                _with_provider_metadata(
+                    item,
+                    legacy_mode=False,
+                    weighted_trace=trace_by_parent.get(item.parent_id or item.chunk_id),
+                )
                 for item in build_evidence_from_candidates(
                     candidates,
                     parent_resolver=_parent_resolver(db, candidates),
@@ -461,14 +464,158 @@ def _ordered_unique(values) -> list[str]:
     return ordered
 
 
-def _with_provider_metadata(evidence: Evidence, *, legacy_mode: bool) -> Evidence:
+def _with_provider_metadata(
+    evidence: Evidence,
+    *,
+    legacy_mode: bool,
+    weighted_trace: dict[str, Any] | None = None,
+) -> Evidence:
     metadata = dict(evidence.metadata)
     metadata.setdefault("provider", TEXT_HYBRID_PROVIDER)
     metadata.setdefault("retrieval_provider", TEXT_HYBRID_PROVIDER)
     metadata.setdefault("provider_contract", "TextHybridProvider")
+    if weighted_trace is not None:
+        metadata.update(weighted_trace)
     if legacy_mode:
         metadata.setdefault("provider_path", "legacy_mode_switch")
     return replace(evidence, metadata=metadata)
+
+
+def _weighted_trace_by_parent(candidates: list[Candidate]) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, list[Candidate]] = {}
+    for candidate in candidates:
+        key = candidate.parent_id or candidate.metadata.get("parent_id") or candidate.chunk_id
+        if key:
+            grouped.setdefault(str(key), []).append(candidate)
+
+    return {
+        parent_id: _canonical_weighted_parent_trace(parent_candidates)
+        for parent_id, parent_candidates in grouped.items()
+    }
+
+
+def _canonical_weighted_parent_trace(candidates: list[Candidate]) -> dict[str, Any]:
+    ordered_candidates = sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate.final_rank or candidate.rerank_rank or candidate.fusion_rank or 10**9,
+            candidate.chunk_id,
+        ),
+    )
+    all_lane_contributions: list[dict[str, Any]] = []
+    all_lane_attributions: list[dict[str, Any]] = []
+    contributions_by_chunk: dict[str, list[dict[str, Any]]] = {}
+    attributions_by_chunk: dict[str, list[dict[str, Any]]] = {}
+    for candidate in ordered_candidates:
+        metadata = candidate.metadata or {}
+        candidate_contributions = _dict_items(metadata.get("lane_contributions"))
+        fusion = metadata.get("fusion")
+        if isinstance(fusion, dict):
+            candidate_contributions.extend(_dict_items(fusion.get("lane_contributions")))
+        candidate_attributions = _dict_items(metadata.get("lane_attributions"))
+        if candidate.chunk_id:
+            contributions_by_chunk.setdefault(candidate.chunk_id, []).extend(
+                candidate_contributions
+            )
+            attributions_by_chunk.setdefault(candidate.chunk_id, []).extend(
+                candidate_attributions
+            )
+        all_lane_contributions.extend(candidate_contributions)
+        all_lane_attributions.extend(candidate_attributions)
+
+    best = min(
+        ordered_candidates,
+        key=lambda candidate: (
+            candidate.final_rank or candidate.rerank_rank or candidate.fusion_rank or 10**9,
+            candidate.chunk_id,
+        ),
+    )
+    lane_contributions = _dedupe_trace_items(
+        contributions_by_chunk.get(best.chunk_id, [])
+    )
+    lane_attributions = _dedupe_trace_items(attributions_by_chunk.get(best.chunk_id, []))
+    parent_child_contributions = _dedupe_trace_items(all_lane_contributions)
+    parent_child_attributions = _dedupe_trace_items(all_lane_attributions)
+    lanes = _ordered_unique(
+        str(item.get("lane")) for item in lane_contributions if item.get("lane")
+    )
+    parent_lanes = _ordered_unique(
+        str(item.get("lane")) for item in parent_child_contributions if item.get("lane")
+    )
+    fusion_score = float(best.fusion_score or 0.0)
+    weighted_contribution = float(best.weighted_contribution or fusion_score)
+    lane = "multi_lane" if len(lanes) > 1 else (lanes[0] if lanes else best.lane)
+    fusion = {
+        "strategy": "weighted_rrf",
+        "lane": lane,
+        "lanes": lanes,
+        "parent_lanes": parent_lanes,
+        "lane_contributions": lane_contributions,
+        "parent_child_contributions": parent_child_contributions,
+        "weighted_contribution": weighted_contribution,
+        "fusion_score": fusion_score,
+        "fusion_rank": best.fusion_rank,
+        "final_rank": best.final_rank,
+        "winning_chunk_id": best.chunk_id,
+        "retrieved_by": list(best.retrieved_by),
+    }
+    return {
+        "provider": TEXT_HYBRID_PROVIDER,
+        "retrieval_provider": TEXT_HYBRID_PROVIDER,
+        "provider_contract": "TextHybridProvider",
+        "lane": lane,
+        "lanes": lanes,
+        "parent_lanes": parent_lanes,
+        "lane_attributions": lane_attributions,
+        "parent_child_attributions": parent_child_attributions,
+        "lane_contributions": lane_contributions,
+        "parent_child_contributions": parent_child_contributions,
+        "weighted_contribution": weighted_contribution,
+        "fusion": fusion,
+        "fusion_score": fusion_score,
+        "fusion_rank": best.fusion_rank,
+        "winning_chunk_id": best.chunk_id,
+        "retrieval_task_id": best.retrieval_task_id,
+        "retrieval_unit_id": best.retrieval_unit_id,
+        "lane_trace": {
+            "provider": TEXT_HYBRID_PROVIDER,
+            "lane": lane,
+            "lanes": lanes,
+            "parent_lanes": parent_lanes,
+            "lane_attributions": lane_attributions,
+            "parent_child_attributions": parent_child_attributions,
+        },
+    }
+
+
+def _dict_items(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        return [dict(value)]
+    if isinstance(value, list | tuple):
+        items: list[dict[str, Any]] = []
+        for item in value:
+            items.extend(_dict_items(item))
+        return items
+    return []
+
+
+def _dedupe_trace_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for item in items:
+        key = (
+            item.get("chunk_id"),
+            item.get("lane"),
+            item.get("rank") or item.get("lane_rank"),
+            item.get("retrieval_task_id"),
+            item.get("retrieval_unit_id"),
+            item.get("weighted_contribution"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
 
 
 def _parent_resolver(db: Session, candidates: list[Candidate]):

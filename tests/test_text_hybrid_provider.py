@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from atlas.core.config import Settings
 from atlas.llm.base import GeneratedAnswer, LLMUsage
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
@@ -11,9 +13,16 @@ from atlas.retrieval.retrieval_task import tasks_from_plan
 
 
 class _CandidateRetriever:
-    def __init__(self, source: str, *, chunk_id: str | None = None) -> None:
+    def __init__(
+        self,
+        source: str,
+        *,
+        chunk_id: str | None = None,
+        parent_id: str | None = None,
+    ) -> None:
         self.source = source
         self.chunk_id = chunk_id
+        self.parent_id = parent_id
         self.calls: list[dict] = []
         self.evidence_calls: list[dict] = []
 
@@ -39,6 +48,8 @@ class _CandidateRetriever:
                 lexical_score=0.8 if self.source == "bm25" else None,
                 lexical_backend="qdrant_bm25" if self.source == "bm25" else None,
                 final_rank=rank,
+                parent_id=self.parent_id,
+                metadata={"parent_id": self.parent_id} if self.parent_id else {},
             )
         ]
 
@@ -107,9 +118,19 @@ def _provider(
     default_mode: str = "hybrid_rrf",
     reranker_enabled: bool = False,
     shared_chunk_id: str | None = None,
+    shared_parent_id: str | None = None,
+    max_context_tokens: int | None = None,
 ) -> tuple[TextHybridProvider, _CandidateRetriever, _CandidateRetriever]:
-    dense = _CandidateRetriever("dense", chunk_id=shared_chunk_id)
-    bm25 = _CandidateRetriever("bm25", chunk_id=shared_chunk_id)
+    dense = _CandidateRetriever(
+        "dense",
+        chunk_id=shared_chunk_id,
+        parent_id=shared_parent_id,
+    )
+    bm25 = _CandidateRetriever(
+        "bm25",
+        chunk_id=shared_chunk_id,
+        parent_id=shared_parent_id,
+    )
     return (
         TextHybridProvider(
             dense_retriever=dense,
@@ -119,7 +140,7 @@ def _provider(
             default_mode=default_mode,
             rrf_top_k=10,
             reranker_enabled=reranker_enabled,
-            max_context_tokens=None,
+            max_context_tokens=max_context_tokens,
         ),
         dense,
         bm25,
@@ -268,6 +289,96 @@ def test_plan_aware_provider_preserves_multi_lane_attribution_after_fusion() -> 
     assert {
         item["lane"] for item in evidence[0].metadata["lane_attributions"]
     } == {"dense", "bm25"}
+    assert evidence[0].metadata["fusion"]["strategy"] == "weighted_rrf"
+    assert {
+        item["lane"] for item in evidence[0].metadata["fusion"]["lane_contributions"]
+    } == {"dense", "bm25"}
+
+
+def test_plan_aware_provider_uses_lane_weights_in_weighted_rrf() -> None:
+    provider, dense, bm25 = _provider()
+    plan = QueryPlan(
+        plan_id="plan_1",
+        original_query="What was 3M FY2018 capex?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="original",
+                text="3M FY2018 capex",
+                retrievers=("dense", "table"),
+                lane_weights={"table": 4.0},
+            ),
+        ),
+    )
+
+    evidence = provider.retrieve_with_plan(
+        object(),
+        query=plan.original_query,
+        top_k=2,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=plan,
+        retrieval_tasks=tasks_from_plan(plan),
+    )
+
+    assert len(dense.calls) == 1
+    assert len(bm25.calls) == 1
+    assert evidence[0].metadata["lanes"] == ["table"]
+    assert evidence[0].metadata["weighted_contribution"] > evidence[1].metadata["weighted_contribution"]
+
+
+def test_parent_evidence_preserves_canonical_weighted_trace(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "atlas.retrieval.providers.text_hybrid.provider.repositories.get_parent_blocks_by_ids",
+        lambda db, parent_ids: {},
+    )
+    provider, dense, bm25 = _provider(
+        shared_parent_id="parent_1",
+        max_context_tokens=1000,
+    )
+    plan = QueryPlan(
+        plan_id="plan_1",
+        original_query="What was 3M FY2018 capex?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="original",
+                text="3M FY2018 capex",
+                retrievers=("dense", "bm25", "table"),
+                lane_weights={"table": 3.0},
+            ),
+        ),
+    )
+
+    evidence = provider.retrieve_with_plan(
+        object(),
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=plan,
+        retrieval_tasks=tasks_from_plan(plan),
+    )
+
+    assert len(evidence) == 1
+    metadata = evidence[0].metadata
+    assert len(dense.calls) == 1
+    assert len(bm25.calls) == 2
+    assert isinstance(metadata["weighted_contribution"], float)
+    assert isinstance(metadata["fusion"], dict)
+    assert isinstance(metadata["lane_contributions"], list)
+    assert all(isinstance(item, dict) for item in metadata["lane_contributions"])
+    assert {
+        item["lane"] for item in metadata["lane_contributions"]
+    } == {"table"}
+    assert sum(
+        item["weighted_contribution"] for item in metadata["lane_contributions"]
+    ) == pytest.approx(metadata["weighted_contribution"])
+    assert {
+        item["lane"] for item in metadata["parent_child_contributions"]
+    } == {"dense", "bm25", "table"}
+    assert metadata["parent_lanes"] == ["table", "dense", "bm25"]
+    assert metadata["lane_trace"]["lane"] == "table"
 
 
 def test_query_runtime_uses_text_hybrid_provider_and_persists_plan_trace() -> None:
@@ -319,3 +430,7 @@ def test_query_runtime_uses_text_hybrid_provider_and_persists_plan_trace() -> No
         for item in result.details["retrieval_trace"]["top_k"]
         for lane in item["lanes"]
     } == {"dense", "bm25", "table"}
+    assert all(
+        item["lane_contributions"]
+        for item in result.details["retrieval_trace"]["top_k"]
+    )

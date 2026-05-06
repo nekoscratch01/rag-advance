@@ -650,6 +650,16 @@ def _evidence_trace_item(item: Evidence) -> dict[str, Any]:
         "lane": metadata.get("lane"),
         "lanes": list(metadata.get("lanes") or ()),
         "lane_attributions": list(metadata.get("lane_attributions") or ()),
+        "lane_contributions": list(
+            metadata.get("lane_contributions")
+            or (
+                metadata.get("fusion", {}).get("lane_contributions")
+                if isinstance(metadata.get("fusion"), dict)
+                else ()
+            )
+            or ()
+        ),
+        "weighted_contribution": metadata.get("weighted_contribution"),
         "retrieval_task_id": metadata.get("retrieval_task_id"),
         "retrieval_unit_id": metadata.get("retrieval_unit_id"),
         "fusion_rank": metadata.get("fusion_rank") or metadata.get("best_fusion_rank"),
