@@ -4,9 +4,14 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from atlas.core.ids import new_id
 from atlas.ingestion.chunker import approx_token_count
 from atlas.retrieval.candidate import Candidate
 from atlas.retrieval.evidence import Evidence
+from atlas.retrieval.evidence_contract import (
+    EvidenceBlock as ContractEvidenceBlock,
+    EvidencePack,
+)
 
 
 @dataclass(frozen=True)
@@ -220,6 +225,62 @@ class _ParentAccumulator:
             rank=rank,
         )
 
+    def to_contract_block(
+        self,
+        *,
+        evidence_index: int,
+        parent_resolver: Any = None,
+        token_budget: int | None = None,
+        included: bool,
+        drop_reason: str | None,
+        coverage: dict[str, Any] | None,
+    ) -> ContractEvidenceBlock | None:
+        runtime_block = self.to_block(
+            parent_resolver=parent_resolver,
+            token_budget=token_budget,
+        )
+        if runtime_block is None:
+            return None
+        metadata = dict(runtime_block.metadata)
+        metadata["prompt_inclusion"] = {
+            "included": included,
+            "drop_reason": drop_reason,
+            "token_count": runtime_block.token_count,
+            "rank": runtime_block.rank,
+        }
+        block_coverage = _block_coverage(runtime_block, coverage or {})
+        metadata["coverage"] = block_coverage
+        return ContractEvidenceBlock(
+            evidence_id=f"c{evidence_index}",
+            source_type="parent_block" if runtime_block.parent_id else "text_chunk",
+            provider=str(metadata.get("provider") or metadata.get("retrieval_provider") or "text_hybrid"),
+            text=runtime_block.text,
+            document_id=runtime_block.document_id,
+            doc_name=runtime_block.doc_name,
+            page_start=runtime_block.page_start,
+            page_end=runtime_block.page_end,
+            chunk_ids=runtime_block.chunk_ids,
+            candidate_ids=_tuple_text(metadata.get("candidate_ids")),
+            retrieval_sources=runtime_block.retrieved_by,
+            best_dense_rank=runtime_block.best_dense_rank,
+            best_bm25_rank=runtime_block.best_lexical_rank,
+            best_rrf_score=runtime_block.best_fusion_score,
+            rerank_score=runtime_block.best_rerank_score,
+            rank=runtime_block.rank,
+            retrieval_score=runtime_block.retrieval_score,
+            source_title=runtime_block.source_title,
+            source_uri=runtime_block.source_uri,
+            section_title=runtime_block.section_title,
+            token_count=runtime_block.token_count,
+            coverage=block_coverage,
+            metadata=metadata,
+            parent_id=runtime_block.parent_id,
+            child_ids=runtime_block.child_ids,
+            included_in_prompt=included,
+            drop_reason=drop_reason,
+            drop_stage="prompt_pack" if drop_reason else None,
+        )
+
 
 def build_evidence_blocks(
     candidates: Sequence[Candidate],
@@ -328,13 +389,155 @@ def build_evidence_from_candidates(
     max_context_tokens: int,
     max_blocks: int | None = None,
 ) -> list[Evidence]:
-    blocks = build_evidence_blocks(
+    pack = build_evidence_pack_from_candidates(
         candidates,
         parent_resolver=parent_resolver,
         max_context_tokens=max_context_tokens,
         max_blocks=max_blocks,
     )
-    return evidence_blocks_to_evidence(blocks)
+    return evidence_pack_to_evidence(pack)
+
+
+def build_evidence_pack_from_candidates(
+    candidates: Sequence[Candidate],
+    *,
+    parent_resolver: Any = None,
+    max_context_tokens: int,
+    max_blocks: int | None = None,
+    query_id: str | None = None,
+    plan_id: str | None = None,
+    retrieval_unit_coverage: dict[str, Any] | None = None,
+) -> EvidencePack:
+    if max_context_tokens <= 0:
+        dropped = tuple(
+            _candidate_drop_block(candidate, index, reason="token_budget")
+            for index, candidate in enumerate(candidates, start=1)
+        )
+        return EvidencePack(
+            pack_id=new_id("ep"),
+            query_id=query_id,
+            plan_id=plan_id,
+            blocks=(),
+            dropped_blocks=dropped,
+            token_count=0,
+            max_context_tokens=max_context_tokens,
+            metadata={"evidence_builder": "parent_child_pack_v1", "drop_reason": "token_budget"},
+        )
+
+    entries = _dedupe_candidates(candidates)
+    parents = _dedupe_parents(entries)
+
+    included: list[ContractEvidenceBlock] = []
+    dropped: list[ContractEvidenceBlock] = []
+    used_tokens = 0
+    for order, accumulator in enumerate(parents, start=1):
+        remaining = max_context_tokens - used_tokens
+        if max_blocks is not None and len(included) >= max_blocks:
+            block = accumulator.to_contract_block(
+                evidence_index=order,
+                parent_resolver=parent_resolver,
+                token_budget=None,
+                included=False,
+                drop_reason="max_blocks",
+                coverage=retrieval_unit_coverage,
+            )
+            if block is not None:
+                dropped.append(block)
+            continue
+
+        if remaining <= 0:
+            block = accumulator.to_contract_block(
+                evidence_index=order,
+                parent_resolver=parent_resolver,
+                token_budget=None,
+                included=False,
+                drop_reason="token_budget",
+                coverage=retrieval_unit_coverage,
+            )
+            if block is not None:
+                dropped.append(block)
+            continue
+
+        block = accumulator.to_contract_block(
+            evidence_index=len(included) + 1,
+            parent_resolver=parent_resolver,
+            token_budget=remaining,
+            included=True,
+            drop_reason=None,
+            coverage=retrieval_unit_coverage,
+        )
+        if block is None:
+            continue
+        included.append(block)
+        used_tokens += max(0, block.token_count)
+
+    return EvidencePack(
+        pack_id=new_id("ep"),
+        query_id=query_id,
+        plan_id=plan_id,
+        blocks=tuple(included),
+        dropped_blocks=tuple(dropped),
+        token_count=used_tokens,
+        max_context_tokens=max_context_tokens,
+        metadata={
+            "evidence_builder": "parent_child_pack_v1",
+            "candidate_count": len(candidates),
+            "included_count": len(included),
+            "dropped_count": len(dropped),
+            "coverage": retrieval_unit_coverage or {},
+        },
+    )
+
+
+def evidence_pack_to_evidence(pack: EvidencePack) -> list[Evidence]:
+    evidence: list[Evidence] = []
+    for index, block in enumerate(pack.prompt_blocks, start=1):
+        child_ids = block.child_ids or block.chunk_ids
+        retrieved_by = block.retrieval_sources
+        metadata = {
+            **block.metadata,
+            "evidence_pack_id": pack.pack_id,
+            "doc_name": block.doc_name,
+            "parent_id": block.parent_id,
+            "child_ids": list(child_ids),
+            "chunk_ids": list(child_ids),
+            "retrieved_by": list(retrieved_by),
+            "sources": list(retrieved_by),
+            "rank": block.rank or index,
+            "final_rank": block.rank,
+            "best_dense_rank": block.best_dense_rank,
+            "best_lexical_rank": block.best_bm25_rank,
+            "best_fusion_score": block.best_rrf_score,
+            "rerank_score": block.rerank_score,
+            "included_in_prompt": block.included_in_prompt,
+            "drop_reason": block.drop_reason,
+            "coverage": block.coverage,
+            "source_type": block.source_type,
+            "provider": block.provider,
+        }
+        evidence.append(
+            Evidence(
+                evidence_id=f"c{index}",
+                document_id=block.document_id,
+                chunk_id=child_ids[0] if child_ids else "",
+                text=block.text,
+                source_title=block.source_title or block.doc_name,
+                source_uri=block.source_uri,
+                section_title=block.section_title,
+                page_start=block.page_start,
+                page_end=block.page_end,
+                retrieval_score=float(block.retrieval_score),
+                rank=block.rank or index,
+                token_count=block.token_count,
+                metadata=metadata,
+                parent_id=block.parent_id,
+                child_ids=child_ids,
+                retrieved_by=retrieved_by,
+                rerank_score=block.rerank_score,
+                rerank_rank=_int_or_none(block.metadata.get("rerank_rank")),
+            )
+        )
+    return evidence
 
 
 def _dedupe_candidates(candidates: Sequence[Candidate]) -> list[_CandidateEntry]:
@@ -538,6 +741,167 @@ def _candidate_sources(candidate: Candidate, lexical_backend: str | None) -> tup
     if not sources and getattr(candidate, "fusion_score", None) is not None:
         sources.append("fusion")
     return tuple(sources)
+
+
+def _candidate_drop_block(
+    candidate: Candidate,
+    evidence_index: int,
+    *,
+    reason: str,
+) -> ContractEvidenceBlock:
+    metadata = dict(candidate.metadata)
+    metadata["prompt_inclusion"] = {
+        "included": False,
+        "drop_reason": reason,
+        "token_count": candidate.token_count,
+        "rank": candidate.final_rank or candidate.rerank_rank or candidate.fusion_rank,
+    }
+    coverage = _candidate_coverage(metadata)
+    return ContractEvidenceBlock(
+        evidence_id=f"d{evidence_index}",
+        source_type=candidate.source_type,
+        provider=candidate.provider,
+        text=candidate.text,
+        document_id=candidate.document_id,
+        doc_name=candidate.doc_name,
+        page_start=candidate.page_start,
+        page_end=candidate.page_end,
+        chunk_ids=(candidate.chunk_id,),
+        candidate_ids=(candidate.candidate_id,) if candidate.candidate_id else (),
+        retrieval_sources=candidate.retrieved_by,
+        best_dense_rank=candidate.dense_rank,
+        best_bm25_rank=candidate.lexical_rank,
+        best_rrf_score=candidate.fusion_score,
+        rerank_score=candidate.rerank_score,
+        rank=candidate.final_rank or candidate.rerank_rank or candidate.fusion_rank,
+        retrieval_score=float(
+            candidate.rerank_score
+            if candidate.rerank_score is not None
+            else candidate.fusion_score or candidate.lane_score or 0.0
+        ),
+        source_title=candidate.source_title,
+        source_uri=candidate.source_uri,
+        section_title=candidate.section_title,
+        token_count=candidate.token_count,
+        coverage=coverage,
+        metadata=metadata,
+        parent_id=candidate.parent_id or metadata.get("parent_id"),
+        child_ids=(candidate.chunk_id,),
+        included_in_prompt=False,
+        drop_reason=reason,
+        drop_stage="prompt_pack",
+    )
+
+
+def _block_coverage(block: EvidenceBlock, expected: dict[str, Any]) -> dict[str, Any]:
+    text = " ".join(block.text.lower().split())
+    metadata = block.metadata or {}
+    entities = _coverage_items(expected.get("entities") or metadata.get("entities"))
+    periods = _coverage_items(expected.get("periods") or metadata.get("periods"))
+    metrics = _coverage_items(expected.get("metrics") or metadata.get("metrics"))
+    unit_ids = _coverage_items(expected.get("retrieval_unit_ids") or metadata.get("retrieval_unit_ids"))
+    return {
+        "entities": _coverage_result(entities, text, metadata),
+        "periods": _coverage_result(periods, text, metadata),
+        "metrics": _coverage_result(metrics, text, metadata),
+        "retrieval_unit_ids": unit_ids,
+        "covered_retrieval_unit_ids": _covered_unit_ids(unit_ids, metadata),
+    }
+
+
+def _candidate_coverage(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "retrieval_unit_ids": _coverage_items(metadata.get("retrieval_unit_ids")),
+        "covered_retrieval_unit_ids": _coverage_items(metadata.get("retrieval_unit_id")),
+    }
+
+
+def _coverage_items(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, Mapping):
+        return tuple(str(item) for item in value.values() if item)
+    try:
+        return tuple(str(item) for item in value if item)
+    except TypeError:
+        return (str(value),) if value else ()
+
+
+def _coverage_result(values: tuple[str, ...], text: str, metadata: Mapping[str, Any]) -> dict[str, list[str]]:
+    covered: list[str] = []
+    missing: list[str] = []
+    normalized_text = _normalize_coverage_text(text)
+    metadata_text = _trusted_coverage_metadata_text(metadata)
+    for value in values:
+        aliases = _coverage_aliases(value)
+        if any(alias in normalized_text or alias in metadata_text for alias in aliases):
+            covered.append(value)
+        else:
+            missing.append(value)
+    return {"covered": covered, "missing": missing}
+
+
+def _covered_unit_ids(unit_ids: tuple[str, ...], metadata: Mapping[str, Any]) -> tuple[str, ...]:
+    observed = set(_coverage_items(metadata.get("retrieval_unit_id")))
+    observed.update(_coverage_items(metadata.get("retrieval_unit_ids")))
+    return tuple(unit_id for unit_id in unit_ids if unit_id in observed)
+
+
+def _coverage_aliases(value: str) -> tuple[str, ...]:
+    normalized = _normalize_coverage_text(value)
+    aliases = {normalized}
+    if "_" in value:
+        aliases.add(_normalize_coverage_text(value.replace("_", " ")))
+    if normalized.endswith("y"):
+        aliases.add(f"{normalized[:-1]}ies")
+    elif not normalized.endswith("s"):
+        aliases.add(f"{normalized}s")
+    return tuple(alias for alias in aliases if alias)
+
+
+def _normalize_coverage_text(value: str) -> str:
+    return " ".join(
+        str(value)
+        .lower()
+        .replace("_", " ")
+        .replace("-", " ")
+        .split()
+    )
+
+
+def _trusted_coverage_metadata_text(metadata: Mapping[str, Any]) -> str:
+    trusted_keys = {
+        "company",
+        "companies",
+        "period",
+        "periods",
+        "metric",
+        "metrics",
+        "doc_name",
+        "document_title",
+        "source_title",
+        "section_title",
+    }
+    values = [
+        _flatten_metadata_text(value)
+        for key, value in metadata.items()
+        if str(key) in trusted_keys
+    ]
+    return _normalize_coverage_text(" ".join(value for value in values if value))
+
+
+def _flatten_metadata_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Mapping):
+        return " ".join(_flatten_metadata_text(item) for item in value.values())
+    if isinstance(value, list | tuple | set):
+        return " ".join(_flatten_metadata_text(item) for item in value)
+    return str(value)
 
 
 def _truncate_text_to_budget(text: str, token_budget: int) -> str:

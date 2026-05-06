@@ -263,6 +263,7 @@ class QueryRuntime:
             raise atlas_error from exc
 
         if not evidence:
+            empty_pack_details = _retriever_pack_details(self.retriever)
             latency_ms = int((time.perf_counter() - started) * 1000)
             answer = "当前导入的文档中没有检索到足够证据回答这个问题。"
             citations: list[dict] = []
@@ -274,6 +275,7 @@ class QueryRuntime:
                 extra={
                     **_critic_details(pre_critic=pre_critic, post_critic=None),
                     **_retrieval_trace_details([]),
+                    **empty_pack_details,
                 },
             )
             _record_trace_metadata(
@@ -638,6 +640,39 @@ def _retrieval_trace_details(evidence: list[Evidence]) -> dict[str, Any]:
     }
 
 
+def _retriever_pack_details(retriever: object) -> dict[str, Any]:
+    pack = getattr(retriever, "last_evidence_pack", None)
+    if pack is None:
+        return {}
+    return {"evidence_pack": _evidence_pack_summary(pack)}
+
+
+def _evidence_pack_summary(pack: object) -> dict[str, Any]:
+    blocks = tuple(getattr(pack, "blocks", ()) or ())
+    dropped_blocks = tuple(getattr(pack, "dropped_blocks", ()) or ())
+    return {
+        "pack_id": getattr(pack, "pack_id", None),
+        "token_count": getattr(pack, "token_count", None),
+        "max_context_tokens": getattr(pack, "max_context_tokens", None),
+        "block_count": len(blocks),
+        "dropped_block_count": len(dropped_blocks),
+        "dropped_blocks": [
+            {
+                "evidence_id": getattr(block, "evidence_id", None),
+                "chunk_ids": list(getattr(block, "chunk_ids", ()) or ()),
+                "parent_id": getattr(block, "parent_id", None),
+                "rank": getattr(block, "rank", None),
+                "token_count": getattr(block, "token_count", None),
+                "drop_reason": getattr(block, "drop_reason", None),
+                "drop_stage": getattr(block, "drop_stage", None),
+                "coverage": getattr(block, "coverage", None),
+            }
+            for block in dropped_blocks
+        ],
+        "metadata": dict(getattr(pack, "metadata", {}) or {}),
+    }
+
+
 def _evidence_trace_item(item: Evidence) -> dict[str, Any]:
     metadata = item.metadata or {}
     return {
@@ -668,6 +703,10 @@ def _evidence_trace_item(item: Evidence) -> dict[str, Any]:
         "rerank_score": metadata.get("rerank_score") or metadata.get("best_rerank_score"),
         "reranker": metadata.get("reranker"),
         "reranker_input": metadata.get("reranker_input"),
+        "evidence_pack": metadata.get("evidence_pack"),
+        "coverage": metadata.get("coverage"),
+        "included_in_prompt": metadata.get("included_in_prompt"),
+        "drop_reason": metadata.get("drop_reason"),
     }
 
 

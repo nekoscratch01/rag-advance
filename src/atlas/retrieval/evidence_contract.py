@@ -21,14 +21,19 @@ class EvidenceBlock:
     best_bm25_rank: int | None = None
     best_rrf_score: float | None = None
     rerank_score: float | None = None
+    rank: int | None = None
+    retrieval_score: float = 0.0
+    source_title: str | None = None
+    source_uri: str | None = None
+    section_title: str | None = None
     token_count: int = 0
     coverage: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
-    source_title: str | None = None
-    source_uri: str | None = None
     parent_id: str | None = None
+    child_ids: tuple[str, ...] = ()
     included_in_prompt: bool = False
     drop_reason: str | None = None
+    drop_stage: str | None = None
 
 
 @dataclass(frozen=True)
@@ -45,3 +50,7 @@ class EvidencePack:
     @property
     def prompt_blocks(self) -> tuple[EvidenceBlock, ...]:
         return tuple(block for block in self.blocks if block.included_in_prompt)
+
+    @property
+    def all_blocks(self) -> tuple[EvidenceBlock, ...]:
+        return (*self.blocks, *self.dropped_blocks)

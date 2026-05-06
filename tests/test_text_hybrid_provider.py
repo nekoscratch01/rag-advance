@@ -113,6 +113,24 @@ class _FakeDB:
         self.commits += 1
 
 
+class _EmptyRetriever(TextHybridProvider):
+    def __init__(self, pack) -> None:
+        self.last_evidence_pack = pack
+
+    def retrieve_with_plan(
+        self,
+        db,
+        *,
+        query,
+        top_k,
+        filters,
+        options,
+        query_plan,
+        retrieval_tasks,
+    ):
+        return []
+
+
 def _provider(
     *,
     default_mode: str = "hybrid_rrf",
@@ -366,6 +384,8 @@ def test_parent_evidence_preserves_canonical_weighted_trace(monkeypatch: pytest.
     assert len(bm25.calls) == 2
     assert isinstance(metadata["weighted_contribution"], float)
     assert isinstance(metadata["fusion"], dict)
+    assert metadata["evidence_pack"]["block_count"] == 1
+    assert metadata["evidence_pack"]["dropped_block_count"] == 0
     assert isinstance(metadata["lane_contributions"], list)
     assert all(isinstance(item, dict) for item in metadata["lane_contributions"])
     assert {
@@ -434,3 +454,75 @@ def test_query_runtime_uses_text_hybrid_provider_and_persists_plan_trace() -> No
         item["lane_contributions"]
         for item in result.details["retrieval_trace"]["top_k"]
     )
+
+
+def test_query_runtime_exposes_empty_evidence_pack_drop_reasons() -> None:
+    from atlas.query_runtime.evidence_builder import build_evidence_pack_from_candidates
+
+    plan = QueryPlan(
+        plan_id="plan_1",
+        original_query="What was 3M FY2018 capex?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="original",
+                text="3M FY2018 capex",
+            ),
+        ),
+    )
+    pack = build_evidence_pack_from_candidates(
+        (
+            Candidate(
+                chunk_id="chk_1",
+                document_id="doc_1",
+                doc_name="doc",
+                source_title="doc",
+                company="3M",
+                text="3M FY2018 capex was 1,577.",
+                page_start=1,
+                page_end=1,
+                chunk_index=1,
+                token_count=10,
+                retrieved_by=("dense",),
+                dense_rank=1,
+                dense_score=0.9,
+            ),
+        ),
+        max_context_tokens=0,
+        plan_id="plan_1",
+    )
+    runtime = QueryRuntime(
+        settings=Settings(openai_api_key=None, cache_enabled=False),
+        retriever=_EmptyRetriever(pack),
+        generator=_Generator(),
+        orchestrator=_StaticOrchestrator(plan),
+    )
+
+    result = runtime.run(
+        _FakeDB(),
+        query=plan.original_query,
+        top_k=1,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+    )
+
+    assert result.confidence == "insufficient"
+    assert result.details["evidence_pack"]["dropped_block_count"] == 1
+    assert result.details["evidence_pack"]["dropped_blocks"][0]["drop_reason"] == "token_budget"
+
+
+def test_legacy_retrieve_options_clears_stale_evidence_pack() -> None:
+    from atlas.query_runtime.evidence_builder import build_evidence_pack_from_candidates
+
+    provider, _, _ = _provider()
+    provider.last_evidence_pack = build_evidence_pack_from_candidates((), max_context_tokens=0)
+
+    provider.retrieve_with_options(
+        object(),
+        query="plain dense query",
+        top_k=1,
+        filters={},
+        options={"retrieval_mode": "dense_only"},
+    )
+
+    assert provider.last_evidence_pack is None

@@ -8,7 +8,10 @@ from sqlalchemy.orm import Session
 
 from atlas.db import repositories
 from atlas.query_orchestrator.schema import QueryPlan
-from atlas.query_runtime.evidence_builder import build_evidence_from_candidates
+from atlas.query_runtime.evidence_builder import (
+    build_evidence_pack_from_candidates,
+    evidence_pack_to_evidence,
+)
 from atlas.retrieval.candidate import Candidate
 from atlas.retrieval.evidence import Evidence
 from atlas.retrieval.fusion import DEFAULT_RRF_K, WeightedRRFInput, weighted_rrf_fuse
@@ -59,6 +62,7 @@ class TextHybridProvider:
         self.lexical_top_k = lexical_top_k
         self.max_context_tokens = max_context_tokens
         self.default_mode = default_mode
+        self.last_evidence_pack = None
         self.mode_switcher = ModeSwitchingRetriever(
             dense_retriever=dense_retriever,
             bm25_retriever=bm25_retriever,
@@ -99,6 +103,7 @@ class TextHybridProvider:
         filters: dict | None = None,
         options: dict | None = None,
     ) -> list[Evidence]:
+        self.last_evidence_pack = None
         evidence = self.mode_switcher.retrieve_with_options(
             db,
             query=query,
@@ -137,7 +142,13 @@ class TextHybridProvider:
             query_plan=query_plan,
             retrieval_tasks=retrieval_tasks,
         )
-        return self._candidates_to_evidence(db, candidates, top_k=top_k)
+        return self._candidates_to_evidence(
+            db,
+            candidates,
+            top_k=top_k,
+            query_plan=query_plan,
+            retrieval_tasks=retrieval_tasks,
+        )
 
     def retrieve_candidates_with_plan(
         self,
@@ -267,22 +278,34 @@ class TextHybridProvider:
         candidates: list[Candidate],
         *,
         top_k: int,
+        query_plan: QueryPlan | None = None,
+        retrieval_tasks: list[RetrievalTask] | None = None,
     ) -> list[Evidence]:
         if self.max_context_tokens is not None:
             trace_by_parent = _weighted_trace_by_parent(candidates)
-            return [
+            pack = build_evidence_pack_from_candidates(
+                candidates,
+                parent_resolver=_parent_resolver(db, candidates),
+                max_context_tokens=self.max_context_tokens,
+                max_blocks=top_k,
+                plan_id=query_plan.plan_id if query_plan else None,
+                retrieval_unit_coverage=_retrieval_unit_coverage(
+                    candidates,
+                    query_plan=query_plan,
+                    retrieval_tasks=retrieval_tasks or [],
+                ),
+            )
+            self.last_evidence_pack = pack
+            evidence = [
                 _with_provider_metadata(
                     item,
                     legacy_mode=False,
                     weighted_trace=trace_by_parent.get(item.parent_id or item.chunk_id),
                 )
-                for item in build_evidence_from_candidates(
-                    candidates,
-                    parent_resolver=_parent_resolver(db, candidates),
-                    max_context_tokens=self.max_context_tokens,
-                    max_blocks=top_k,
-                )
+                for item in evidence_pack_to_evidence(pack)
             ]
+            return [_with_evidence_pack_metadata(item, pack) for item in evidence]
+        self.last_evidence_pack = None
         return [
             _candidate_to_evidence(candidate, index)
             for index, candidate in enumerate(candidates[:top_k], start=1)
@@ -497,6 +520,74 @@ def _with_provider_metadata(
     if legacy_mode:
         metadata.setdefault("provider_path", "legacy_mode_switch")
     return replace(evidence, metadata=metadata)
+
+
+def _with_evidence_pack_metadata(evidence: Evidence, pack) -> Evidence:
+    metadata = dict(evidence.metadata)
+    metadata["evidence_pack"] = _evidence_pack_summary(pack)
+    return replace(evidence, metadata=metadata)
+
+
+def _evidence_pack_summary(pack) -> dict[str, Any]:
+    return {
+        "pack_id": pack.pack_id,
+        "token_count": pack.token_count,
+        "max_context_tokens": pack.max_context_tokens,
+        "block_count": len(pack.blocks),
+        "dropped_block_count": len(pack.dropped_blocks),
+        "dropped_blocks": [
+            {
+                "evidence_id": block.evidence_id,
+                "chunk_ids": list(block.chunk_ids),
+                "parent_id": block.parent_id,
+                "rank": block.rank,
+                "token_count": block.token_count,
+                "drop_reason": block.drop_reason,
+                "drop_stage": block.drop_stage,
+                "coverage": block.coverage,
+            }
+            for block in pack.dropped_blocks
+        ],
+        "metadata": dict(pack.metadata),
+    }
+
+
+def _retrieval_unit_coverage(
+    candidates: list[Candidate],
+    *,
+    query_plan: QueryPlan | None,
+    retrieval_tasks: list[RetrievalTask],
+) -> dict[str, Any]:
+    plan_entities = [entity.value for entity in query_plan.entities] if query_plan else []
+    plan_metrics = [metric.canonical_name for metric in query_plan.metrics] if query_plan else []
+    plan_periods = [
+        period.normalized or period.value
+        for period in query_plan.periods
+    ] if query_plan else []
+    unit_ids = _ordered_unique(
+        [
+            *(task.unit_id for task in retrieval_tasks),
+            *(candidate.retrieval_unit_id for candidate in candidates if candidate.retrieval_unit_id),
+        ]
+    )
+    entities = _ordered_unique(
+        [
+            *plan_entities,
+            *(str(candidate.company) for candidate in candidates if candidate.company),
+        ]
+    )
+    metrics: list[str] = list(plan_metrics)
+    periods: list[str] = list(plan_periods)
+    for candidate in candidates:
+        metadata = candidate.metadata or {}
+        metrics.extend(str(item) for item in _dict_items(metadata.get("metrics")))
+        periods.extend(str(item) for item in _dict_items(metadata.get("periods")))
+    return {
+        "retrieval_unit_ids": unit_ids,
+        "entities": entities,
+        "metrics": _ordered_unique(metrics),
+        "periods": _ordered_unique(periods),
+    }
 
 
 def _weighted_trace_by_parent(candidates: list[Candidate]) -> dict[str, dict[str, Any]]:
