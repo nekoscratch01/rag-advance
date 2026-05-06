@@ -1,6 +1,6 @@
 {
   "case_count": 5,
-  "duration_seconds": 0.058,
+  "duration_seconds": 0.057,
   "failure_buckets": {
     "bucket_counts": {
       "answer_terms_miss@3": 3,
@@ -110,8 +110,8 @@
       ]
     }
   },
-  "finished_at": "2026-05-06T05:29:15.866620+00:00",
-  "generated_at": "2026-05-06T05:29:15.866620+00:00",
+  "finished_at": "2026-05-06T05:42:44.227744+00:00",
+  "generated_at": "2026-05-06T05:42:44.227744+00:00",
   "groups": {
     "candidate_shape": [
       "shape_child_chunk",
@@ -150,7 +150,7 @@
   ],
   "ontology_path": "configs/finance_metric_ontology.yaml",
   "run_id": "smoke_20260506",
-  "started_at": "2026-05-06T05:29:15.808422+00:00",
+  "started_at": "2026-05-06T05:42:44.170297+00:00",
   "variant_count": 20,
   "variant_results": {
     "filter_metadata_only": {

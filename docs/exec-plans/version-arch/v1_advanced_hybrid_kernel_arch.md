@@ -268,8 +268,8 @@ src/atlas/core/config.py
 TODO：
 
 ```text
-service.py / llm_planner.py 需要把 validator failure 接成 retry loop。
-fallback.py 不应输出 sql / graph。
+把 disabled_provider retry reason 和 retry_count 写入 query_plans / trace payload。
+继续用测试锁住 fallback.py 不输出 sql / graph。
 ```
 
 ### 4.3 Unit-first 约束
@@ -377,7 +377,7 @@ Provider 内部 lanes：
 
 ```text
 dense_text = task.query_text
-sparse_text = join_unique(task.query_text, task.should_terms)
+sparse_text = task.query_text + task.should_terms + repeat(task.must_have_terms, 3)
 metadata_filter = task.metadata_filter
 qdrant_filter = metadata_filter -> Qdrant payload filter
 ```
@@ -414,8 +414,9 @@ src/atlas/retrieval/bm25_retriever.py
 
 ```text
 lane_query_text("metric_alias") 已拼入 should_terms。
-bm25 lane 需要收敛到 sparse_text = task.query_text + should_terms 的统一规则。
+bm25 lane 已收敛到 sparse_text = task.query_text + should_terms + repeated must_have_terms。
 Dense lane 保持 dense_text = task.query_text。
+must_have_terms 的 sparse boost 使用字符串重复 3 次，不改 BM25 底层公式。
 ```
 
 ### 6.2 metadata_filter 到 Qdrant payload filter
@@ -464,6 +465,7 @@ RetrievalTask
 lane_trace
 reranker context
 cache stable task payload
+BM25 sparse_text boost
 ```
 
 它不是默认硬过滤条件。
@@ -472,14 +474,14 @@ cache stable task payload
 
 ```text
 must_have_terms 是 experimental retrieval variable。
-它可以用于 reranker hint、coverage trace、post-filter ablation。
+它可以用于 sparse boost、reranker hint、coverage trace、post-filter ablation。
 它不能单独代表 entity / period / metric 的完整语义约束。
 ```
 
 TODO：
 
 ```text
-补 must_have_terms off/on eval。
+补 must_have_terms hard-filter / sparse-boost / off 的真实 FinanceBench eval。
 如果要做 hard lexical filter，必须单独报告误杀率。
 ```
 
@@ -825,7 +827,7 @@ cache hit/miss
 2. compound_unit_retry_success_rate
 3. metadata_filter_hit_rate
 4. must_have_terms off/on ablation
-5. sparse_text = unit.text vs unit.text + should_terms ablation
+5. sparse_text = unit.text vs unit.text + should_terms vs must_terms sparse boost ablation
 6. Python Weighted RRF vs Qdrant RRF ablation
 7. serialized table textual lane off/on ablation
 8. AAPL/MSFT/Vision Pro hybrid-only regression case
@@ -857,7 +859,7 @@ V1 应执行：
 2. Planner 生成 hybrid-only retrieval_units。
 3. RetrievalTask 编译 metadata_filter，例如 filing_type / document_ids。
 4. TextHybridProvider 对每个 unit 执行 dense_text = unit.text。
-5. TextHybridProvider 对每个 unit 执行 sparse_text = unit.text + should_terms。
+5. TextHybridProvider 对每个 unit 执行 sparse_text = unit.text + should_terms + repeat(must_have_terms, 3)。
 6. Qdrant dense / sparse 分别召回 source chunks。
 7. Weighted RRF 合并候选。
 8. Reranker 精排。
@@ -945,7 +947,7 @@ RetrievalTask:
   - company / metric / table hints 这类语义 metadata 不应硬过滤，后续可做 boost/reranker context
 
 TextHybridProvider:
-  - must_have_terms hard-filter ablation
+  - must_have_terms hard-filter / sparse-boost / off ablation
   - Qdrant RRF path 与 Python Weighted RRF 对比
 
 Table Lane:

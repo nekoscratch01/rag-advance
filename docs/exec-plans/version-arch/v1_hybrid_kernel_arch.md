@@ -349,6 +349,30 @@ query:
 What is the FY2018 capital expenditure amount for 3M?
 ```
 
+在 Advanced Hybrid Provider 口径下，BM25 lane 不直接吃完整 `QueryPlan`，而是吃 provider 编译后的 sparse input：
+
+```text
+sparse_text = unit.text + should_terms + repeat(must_have_terms, 3)
+```
+
+例如 planner 给出：
+
+```text
+unit.text = What is the FY2018 capital expenditure amount for 3M?
+should_terms = purchases of property, plant and equipment
+must_have_terms = 3M, FY2018
+```
+
+实际 sparse query 会近似变成：
+
+```text
+What is the FY2018 capital expenditure amount for 3M?
+purchases of property, plant and equipment
+3M 3M 3M FY2018 FY2018 FY2018
+```
+
+这里的重复词是 sparse boost。它不修改 BM25 底层公式，只通过重复关键 term 提高词法偏好；它也不是 hard filter，所以不会因为某个简称没有出现在 child chunk 里就直接杀掉候选。
+
 ### 输出
 
 BM25Retriever 返回一批 candidate，并带上词法排名和分数：

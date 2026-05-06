@@ -112,28 +112,34 @@ standalone_query
 query_type
 entities / periods / metrics
 retrieval_units
-filters
+metadata_filter
+enabled_providers
 risk_flags
 budget
 ```
 
-实现策略是 LLM structured planner + deterministic fallback + validator。没有 `OPENAI_API_KEY` 时 fallback 仍可用；有 key 时默认 planner model 为 `gpt-5-nano`。
+实现策略是 LLM structured planner + deterministic fallback + validator。
+没有 `OPENAI_API_KEY` 时 fallback 仍可用；有 key 时默认 planner model 为 `gpt-5-nano`。
+V1 prompt 会动态注入 `enabled_providers=["hybrid"]`，禁用的 `sql` / `graph` 会触发 validation retry 或 fallback。
 
 ### 2. RetrievalTask 固定 provider 输入
 
 `QueryPlan` 会编译为 `RetrievalTask`，明确：
 
 ```text
+provider
 query_text
-filters
-lanes
-lane_budget
+metadata_filter
+provider_status
+unsupported_reason
+internal_lanes
 must_have_terms
 should_terms
 unit_weight
 ```
 
 这让 provider 不再只面对一个字符串，而是面对可解释的检索任务。
+V1 live runtime 只执行 `provider="hybrid"`；`sql` / `graph` 只保留为未来 provider contract，不在 V1 中执行。
 
 ### 3. TextHybridProvider 成为 V1 主检索边界
 
@@ -152,6 +158,17 @@ Metric Alias Lane
 Section Lane
 Table Lane
 ```
+
+这些 lane 不是 Planner 可选 retriever。Planner 只能输出 provider 级别的 `hybrid` unit；Dense/BM25/Metric Alias/Section/Table 都由 `TextHybridProvider` 内部根据任务字段和配置派生。
+
+当前 sparse 输入规则：
+
+```text
+dense_text = unit.text
+sparse_text = unit.text + should_terms + repeat(must_have_terms, 3)
+```
+
+`repeat(must_have_terms, 3)` 是当前实现的 sparse boost：不修改 BM25 底层公式，而是在 sparse input 中重复关键 term，提高词法匹配偏好，同时避免 hard filter 误杀 evidence。
 
 V1 的 Table Lane 是 row/page textual lane。结构化 table store、SQL provider、cell provenance 仍推迟到 V4。
 

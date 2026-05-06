@@ -19,6 +19,7 @@ from atlas.retrieval.fusion import DEFAULT_RRF_K, WeightedRRFInput, weighted_rrf
 DEFAULT_REPORT_DIR = Path("benchmarks/rag_quality/v1_hybrid_provider_reset/smoke_runs")
 DEFAULT_ONTOLOGY_PATH = Path("configs/finance_metric_ontology.yaml")
 HIT_KS = (1, 3)
+SPARSE_BOOST_REPEAT = 3
 
 
 @dataclass(frozen=True)
@@ -361,12 +362,21 @@ def build_retrieval_query(
         should_terms = dedupe((*should_terms, *aliases[:6]))
 
     must_have_terms = dedupe((case.entity, *case.periods))
+    sparse_boost_terms: tuple[str, ...] = ()
+    if config.filter_strategy == "must_terms_sparse_boost":
+        sparse_boost_terms = repeat_terms(must_have_terms, SPARSE_BOOST_REPEAT)
     return {
         "unit_text": case.question,
-        "sparse_text": " ".join([case.question, *should_terms]),
+        "sparse_text": " ".join([case.question, *should_terms, *sparse_boost_terms]),
         "original_query": case.question,
         "must_have_terms": list(must_have_terms),
         "should_terms": list(should_terms),
+        "sparse_boost_terms": list(must_have_terms)
+        if config.filter_strategy == "must_terms_sparse_boost"
+        else [],
+        "sparse_boost_repeat": SPARSE_BOOST_REPEAT
+        if config.filter_strategy == "must_terms_sparse_boost"
+        else 0,
         "entity": case.entity,
         "periods": list(case.periods),
         "metric": case.metric,
@@ -860,10 +870,13 @@ def build_smoke_report(summary: dict[str, Any]) -> str:
         [
             "## 说明",
             "",
+            "filter_must_terms_sparse_boost 使用 repeat(must_have_terms, 3) 的 sparse input 重复词策略，不改 BM25 底层公式。",
+            "",
             (
                 "这是离线 synthetic smoke，用来检查消融维度、trace 字段和"
                 "排序/过滤"
-                "取舍是否可解释；它不是 FinanceBench 全量质量结论。"
+                "取舍是否可解释；它不是 FinanceBench 全量质量结论，"
+                "也不是 generated-answer reliability 结论。"
             ),
             "",
         ]
@@ -1424,6 +1437,15 @@ def dedupe(values: Sequence[str]) -> tuple[str, ...]:
         seen.add(key)
         result.append(text)
     return tuple(result)
+
+
+def repeat_terms(values: Sequence[str], repeat: int) -> tuple[str, ...]:
+    repeated: list[str] = []
+    for value in values:
+        text = " ".join(str(value or "").split())
+        if text:
+            repeated.extend([text] * repeat)
+    return tuple(repeated)
 
 
 def stable_json(value: Any) -> str:

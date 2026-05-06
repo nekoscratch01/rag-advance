@@ -260,6 +260,89 @@ def test_text_hybrid_provider_skips_unsupported_provider_tasks_without_fake_evid
     assert provider.last_retrieval_trace["tasks"][0]["unsupported_reason"]
 
 
+def test_text_hybrid_provider_repeats_must_terms_as_sparse_boost() -> None:
+    provider, dense, bm25 = _provider()
+    plan = QueryPlan(
+        plan_id="plan_1",
+        original_query="Compare revenue.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="sparse_boost",
+                text="Compare revenue",
+                retrievers=("hybrid",),
+                must_have_terms=("Apple", "2023"),
+                should_terms=("net sales",),
+                metadata={"internal_lanes": ["bm25"]},
+            ),
+        ),
+        planner="test",
+    )
+
+    evidence = provider.retrieve_with_plan(
+        object(),
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=plan,
+        retrieval_tasks=tasks_from_plan(plan),
+    )
+
+    assert evidence
+    assert dense.calls == []
+    assert len(bm25.calls) == 1
+    sparse_query = bm25.calls[0]["query"]
+    assert (
+        sparse_query
+        == "Compare revenue net sales Apple Apple Apple 2023 2023 2023"
+    )
+    lane_trace = evidence[0].metadata["lane_trace"]
+    assert lane_trace["query_text"] == sparse_query
+    assert lane_trace["unit_query_text"] == "Compare revenue"
+    assert lane_trace["sparse_boost_terms"] == ["Apple", "2023"]
+    assert lane_trace["sparse_boost_repeat"] == 3
+    provider_lane_trace = provider.last_retrieval_trace["lanes"][0]
+    assert provider_lane_trace["sparse_boost_terms"] == ["Apple", "2023"]
+    assert provider_lane_trace["sparse_boost_repeat"] == 3
+
+
+def test_text_hybrid_provider_keeps_dense_query_unboosted() -> None:
+    provider, dense, bm25 = _provider()
+    plan = QueryPlan(
+        plan_id="plan_1",
+        original_query="Compare revenue.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="dense_sparse_split",
+                text="Compare revenue",
+                retrievers=("hybrid",),
+                must_have_terms=("Apple", "2023"),
+                should_terms=("net sales",),
+                metadata={"internal_lanes": ["dense", "bm25"]},
+            ),
+        ),
+        planner="test",
+    )
+
+    provider.retrieve_with_plan(
+        object(),
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=plan,
+        retrieval_tasks=tasks_from_plan(plan),
+    )
+
+    assert dense.calls[0]["query"] == "Compare revenue"
+    assert (
+        bm25.calls[0]["query"]
+        == "Compare revenue net sales Apple Apple Apple 2023 2023 2023"
+    )
+
+
 def test_text_hybrid_provider_keeps_legacy_modes_available() -> None:
     provider, dense, bm25 = _provider()
 

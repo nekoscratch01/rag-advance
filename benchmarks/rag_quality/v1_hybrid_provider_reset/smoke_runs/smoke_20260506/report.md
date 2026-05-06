@@ -1,7 +1,7 @@
 # V1 Hybrid Provider Reset 离线 Smoke
 
 - 运行 ID：`smoke_20260506`
-- 生成时间：`2026-05-06T05:29:15.866620+00:00`
+- 生成时间：`2026-05-06T05:42:44.227744+00:00`
 - 案例数：`5`
 - 变体数：`20`
 
@@ -54,4 +54,6 @@
 
 ## 说明
 
-这是离线 synthetic smoke，用来检查消融维度、trace 字段和排序/过滤取舍是否可解释；它不是 FinanceBench 全量质量结论。
+filter_must_terms_sparse_boost 使用 repeat(must_have_terms, 3) 的 sparse input 重复词策略，不改 BM25 底层公式。
+
+这是离线 synthetic smoke，用来检查消融维度、trace 字段和排序/过滤取舍是否可解释；它不是 FinanceBench 全量质量结论，也不是 generated-answer reliability 结论。

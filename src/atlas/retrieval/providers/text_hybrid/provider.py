@@ -18,6 +18,7 @@ from atlas.retrieval.fusion import DEFAULT_RRF_K, WeightedRRFInput, weighted_rrf
 from atlas.retrieval.hybrid_retriever import HybridRetriever
 from atlas.retrieval.mode_switching import ModeSwitchingRetriever
 from atlas.retrieval.providers.text_hybrid.lanes import (
+    SPARSE_BOOST_REPEAT,
     SUPPORTED_LANES,
     TEXT_HYBRID_PROVIDER,
     TextHybridLane,
@@ -242,6 +243,12 @@ class TextHybridProvider:
                     "unit_id": task.unit_id,
                     "query_text": lane_query,
                     "metadata_filter": dict(task.metadata_filter),
+                    "sparse_boost_terms": list(task.must_have_terms)
+                    if lane.family == "lexical"
+                    else [],
+                    "sparse_boost_repeat": SPARSE_BOOST_REPEAT
+                    if lane.family == "lexical"
+                    else 0,
                     "requested_top_k": lane_top_k,
                     "returned": len(current_lane_candidates),
                     "latency_ms": int((time.perf_counter() - lane_started) * 1000),

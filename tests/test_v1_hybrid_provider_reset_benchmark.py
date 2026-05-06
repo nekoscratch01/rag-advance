@@ -55,3 +55,28 @@ def test_provider_reset_smoke_reports_answer_term_coverage(tmp_path) -> None:
     assert run.summary["variant_results"]["filter_must_have_hard"]["failure_counts"][
         "answer_terms_miss@3"
     ] == 1
+
+
+def test_sparse_boost_variant_repeats_must_terms_in_sparse_text(tmp_path) -> None:
+    run = run_provider_reset_smoke(output_dir=tmp_path, run_id="smoke_test")
+    record = next(
+        item
+        for item in run.records
+        if item["variant"] == "filter_must_terms_sparse_boost"
+        and item["case_id"] == "smoke_apple_net_sales_2019"
+    )
+
+    sparse_text = record["query"]["sparse_text"]
+    assert record["query"]["sparse_boost_repeat"] == 3
+    assert record["query"]["sparse_boost_terms"] == ["Apple", "2019"]
+    assert "Apple Apple Apple" in sparse_text
+    assert "2019 2019 2019" in sparse_text
+
+    baseline = next(
+        item
+        for item in run.records
+        if item["variant"] == "filter_metadata_only"
+        and item["case_id"] == "smoke_apple_net_sales_2019"
+    )
+    assert baseline["query"]["sparse_boost_repeat"] == 0
+    assert baseline["query"]["sparse_boost_terms"] == []

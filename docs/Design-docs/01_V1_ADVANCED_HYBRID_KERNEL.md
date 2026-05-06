@@ -283,7 +283,7 @@ unit.weight
 
 ```text
 1. dense_text = unit.text
-2. sparse_text = join_unique(unit.text, unit.should_terms)
+2. sparse_text = unit.text + should_terms + sparse-boosted must_have_terms
 3. metadata_filter = plan.metadata_filter + unit.metadata_filter
 4. metadata_filter 编译为 Qdrant payload filter
 5. Dense lane 用 dense_text 查询 Qdrant dense vector
@@ -306,7 +306,7 @@ Dense lane 不应该强行拼入过多精确词约束。它的职责是语义召
 ### 6.2 sparse_text
 
 ```text
-sparse_text = unit.text + should_terms
+sparse_text = unit.text + should_terms + repeat(must_have_terms, 3)
 ```
 
 BM25 sparse lane 需要指标别名、报表行名、section hint 这类词法线索。例如：
@@ -319,13 +319,23 @@ should_terms:
   capital expenditure
   purchases of property, plant and equipment
   investing activities
+
+must_have_terms:
+  3M
+  FY2018
 ```
 
 Sparse query 变成：
 
 ```text
-3M FY2018 capex capital expenditure purchases of property, plant and equipment investing activities
+3M FY2018 capex
+capital expenditure
+purchases of property, plant and equipment
+investing activities
+3M 3M 3M FY2018 FY2018 FY2018
 ```
+
+这里的 `repeat(must_have_terms, 3)` 是一个故意朴素的工程实现：不去改 BM25 / sparse index 底层计分公式，而是在 sparse input 里把关键 term 重复 3 次，让倒排/稀疏匹配自然提高这些词的权重。它只进入 sparse/textual lanes，不进入 dense_text。
 
 ### 6.3 metadata_filter
 
@@ -355,6 +365,7 @@ Provider compiler 必须把它转换成 Qdrant payload filter。已经存在于 
 reranker 输入提示
 candidate coverage trace
 eval ablation
+默认 sparse boost
 可选 lexical post-filter 实验
 ```
 
@@ -368,6 +379,14 @@ eval ablation
 ```
 
 所以 V1 把 `must_have_terms` 标记为 experimental retrieval variable，需要用 FinanceBench 或专项 eval 证明收益后再提升为默认硬约束。
+
+V1 设计默认取舍是：
+
+```text
+must_have_terms 不做 hard filter。
+must_have_terms 会以 repeat=3 的方式进入 sparse_text boost。
+trace 记录 sparse_boost_terms 和 sparse_boost_repeat，方便后续消融。
+```
 
 ### 6.5 Fusion
 
@@ -559,7 +578,7 @@ V1 实际执行路径：
 ```text
 1. planner prompt 只允许 hybrid provider。
 2. TextHybridProvider 生成 dense_text = unit.text。
-3. TextHybridProvider 生成 sparse_text = unit.text + should_terms。
+3. TextHybridProvider 生成 sparse_text = unit.text + should_terms + repeat(must_have_terms, 3)。
 4. metadata_filter 限制 filing_type / document_ids，如果调用方提供了可执行 metadata。
 5. Qdrant dense 和 Qdrant BM25 sparse 分别召回 child chunks。
 6. Python Weighted RRF 或 Qdrant RRF 合并。
@@ -667,7 +686,7 @@ V1 完成标准：
 3. disabled sql/graph provider 会触发 retry 或 fallback，而不是进入 runtime。
 4. compound unit 会被拆分重试。
 5. TextHybridProvider 明确执行 dense_text = unit.text。
-6. TextHybridProvider 明确执行 sparse_text = unit.text + should_terms。
+6. TextHybridProvider 明确执行 sparse_text = unit.text + should_terms + repeat(must_have_terms, 3)。
 7. metadata_filter 能进入 Qdrant payload filter，并写入 trace。
 8. must_have_terms 的默认行为和实验行为可通过 eval 区分。
 9. Table lane 被标注为 serialized table text stopgap。
