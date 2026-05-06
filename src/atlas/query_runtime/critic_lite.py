@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
+from atlas.query_runtime.citation_verifier import verify_citations
+from atlas.query_runtime.evidence_evaluator import evaluate_evidence
 from atlas.retrieval.evidence import Evidence
 
 
@@ -127,36 +129,14 @@ _BPS_UNITS = {"bp", "bps", "basis point", "basis points"}
 
 
 def pre_generation_critic(query: str, evidence: list[Evidence]) -> CriticResult:
-    if not evidence:
-        return CriticResult(
-            status="insufficient",
-            confidence_override="insufficient",
-            reasons=["no_evidence"],
-            details={"evidence_count": 0},
-        )
-
-    anchors = _extract_query_anchors(query)
-    evidence_text = _combined_evidence_text(evidence)
-    missing = [anchor for anchor in anchors if not _anchor_in_text(anchor, evidence_text)]
-
-    details: dict[str, Any] = {
-        "evidence_count": len(evidence),
-        "query_anchors": [_anchor_detail(anchor) for anchor in anchors],
-        "missing_query_anchors": [_anchor_detail(anchor) for anchor in missing],
-    }
-    if missing:
-        return CriticResult(
-            status="warning",
-            confidence_override=None,
-            warnings=[_format_missing_anchor_warning(missing)],
-            reasons=["query_anchors_missing_from_evidence"],
-            details=details,
-        )
-
+    result = evaluate_evidence(query, evidence)
+    status = "ok" if result.status == "supported" else result.status
     return CriticResult(
-        status="ok",
-        confidence_override=None,
-        details=details,
+        status=status,
+        confidence_override=result.confidence_override,
+        warnings=list(result.warnings),
+        reasons=list(result.reasons),
+        details={**result.details, "verification": result.to_dict()},
     )
 
 
@@ -166,72 +146,19 @@ def post_generation_critic(
     evidence: list[Evidence],
     citations: list[dict[str, Any]],
 ) -> CriticResult:
-    evidence_by_id = {item.evidence_id.lower(): item for item in evidence}
-    evidence_ids = set(evidence_by_id)
-    answer_citation_ids = _extract_citation_ids(answer)
-    provided_citation_ids = _extract_provided_citation_ids(citations)
-    referenced_ids = _dedupe([*answer_citation_ids, *provided_citation_ids])
-    invalid_citation_ids = [
-        citation_id for citation_id in referenced_ids if citation_id not in evidence_ids
-    ]
-
-    warnings: list[str] = []
-    reasons: list[str] = []
-    details: dict[str, Any] = {
-        "query_anchors": [_anchor_detail(anchor) for anchor in _extract_query_anchors(query)],
-        "evidence_ids": sorted(evidence_ids),
-        "answer_citation_ids": answer_citation_ids,
-        "provided_citation_ids": provided_citation_ids,
-        "invalid_citation_ids": invalid_citation_ids,
-        "numeric_mismatch_policy": "unsupported",
-        "checked_numbers": [],
-        "unsupported_numbers": [],
-    }
-
-    if not answer_citation_ids:
-        reasons.append("answer_has_no_citations")
-
-    if invalid_citation_ids:
-        reasons.append("citation_not_in_evidence_set")
-
-    cited_evidence_ids = [
-        citation_id for citation_id in referenced_ids if citation_id in evidence_by_id
-    ]
-    unsupported_numbers = _unsupported_answer_numbers(answer, cited_evidence_ids, evidence_by_id)
-    details["checked_numbers"] = [mention.text for mention in _extract_numbers(answer)]
-    details["unsupported_numbers"] = [mention.text for mention in unsupported_numbers]
-
-    if unsupported_numbers:
-        warnings.append(_format_unsupported_number_warning(unsupported_numbers))
-        reasons.append("answer_numbers_missing_from_cited_evidence")
-
-    if (
-        "answer_has_no_citations" in reasons
-        or "citation_not_in_evidence_set" in reasons
-        or "answer_numbers_missing_from_cited_evidence" in reasons
-    ):
-        return CriticResult(
-            status="unsupported",
-            confidence_override="unsupported",
-            warnings=warnings,
-            reasons=reasons,
-            details=details,
-        )
-
-    if warnings:
-        return CriticResult(
-            status="warning",
-            confidence_override=None,
-            warnings=warnings,
-            reasons=reasons,
-            details=details,
-        )
-
+    result = verify_citations(
+        query=query,
+        answer=answer,
+        evidence=evidence,
+        citations=citations,
+    )
+    status = "ok" if result.status == "supported" else result.status
     return CriticResult(
-        status="ok",
-        confidence_override=None,
-        reasons=reasons,
-        details=details,
+        status=status,
+        confidence_override=result.confidence_override,
+        warnings=list(result.warnings),
+        reasons=list(result.reasons),
+        details={**result.details, "verification": result.to_dict()},
     )
 
 

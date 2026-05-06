@@ -321,11 +321,19 @@ class QueryRuntime:
         generation_started = time.perf_counter()
         generation_evidence = _fit_evidence_to_budget(evidence, self.settings.max_context_tokens)
         pre_critic = pre_generation_critic(normalized_query, generation_evidence)
-        if pre_critic.status == "insufficient":
+        if pre_critic.status in {"insufficient", "contradicted"}:
             latency_ms = int((time.perf_counter() - started) * 1000)
-            answer = "当前导入的文档中没有检索到足够证据回答这个问题。"
+            answer = (
+                "当前导入的文档中存在互相冲突的证据，暂时不能生成可靠答案。"
+                if pre_critic.status == "contradicted"
+                else "当前导入的文档中没有检索到足够证据回答这个问题。"
+            )
             citations = []
-            confidence = _critic_confidence("insufficient", pre_critic.confidence_override, None)
+            confidence = _critic_confidence(
+                pre_critic.status,
+                pre_critic.confidence_override,
+                None,
+            )
             details = _runtime_details(
                 query_plan=query_plan,
                 retrieval_tasks=retrieval_tasks,
@@ -607,6 +615,12 @@ def _critic_details(
         "warnings": _dedupe([*pre_critic.warnings, *(post_critic.warnings if post_critic else [])]),
         "reasons": _dedupe([*pre_critic.reasons, *(post_critic.reasons if post_critic else [])]),
     }
+    pre_verification = pre_critic.details.get("verification")
+    if isinstance(pre_verification, dict):
+        payload["evidence_evaluation"] = pre_verification
+    post_verification = post_critic.details.get("verification") if post_critic else None
+    if isinstance(post_verification, dict):
+        payload["citation_verification"] = post_verification
     override = post_critic.confidence_override if post_critic else None
     if override is None:
         override = pre_critic.confidence_override
@@ -715,7 +729,13 @@ def _combined_critic_status(
     post_critic: CriticResult | None,
 ) -> str:
     statuses = [pre_critic.status, post_critic.status if post_critic else None]
-    for status in ("unsupported", "insufficient", "warning"):
+    for status in (
+        "contradicted",
+        "unsupported",
+        "insufficient",
+        "partially_supported",
+        "warning",
+    ):
         if status in statuses:
             return status
     return "ok"
