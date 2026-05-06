@@ -1,0 +1,163 @@
+capital_expenditure:
+  canonical_name: capital_expenditure
+  aliases:
+    - capital expenditure
+    - capital expenditures
+    - capex
+    - capital spending
+    - purchases of property, plant and equipment
+    - additions to property, plant and equipment
+  statement_hints:
+    - cash flow
+    - investing activities
+  value_type: currency
+revenue:
+  canonical_name: revenue
+  aliases:
+    - revenue
+    - revenues
+    - net sales
+    - sales
+    - total revenue
+    - net revenue
+  statement_hints:
+    - income statement
+    - consolidated statements of operations
+  value_type: currency
+net_income:
+  canonical_name: net_income
+  aliases:
+    - net income
+    - net earnings
+    - net loss
+    - net income attributable
+  statement_hints:
+    - income statement
+  value_type: currency
+operating_income:
+  canonical_name: operating_income
+  aliases:
+    - operating income
+    - income from operations
+    - operating profit
+  statement_hints:
+    - income statement
+  value_type: currency
+gross_profit:
+  canonical_name: gross_profit
+  aliases:
+    - gross profit
+    - gross margin dollars
+  statement_hints:
+    - income statement
+  value_type: currency
+total_assets:
+  canonical_name: total_assets
+  aliases:
+    - total assets
+    - assets
+  statement_hints:
+    - balance sheet
+  value_type: currency
+total_liabilities:
+  canonical_name: total_liabilities
+  aliases:
+    - total liabilities
+    - liabilities
+  statement_hints:
+    - balance sheet
+  value_type: currency
+shareholders_equity:
+  canonical_name: shareholders_equity
+  aliases:
+    - shareholders equity
+    - stockholders equity
+    - total equity
+  statement_hints:
+    - balance sheet
+  value_type: currency
+cash_and_cash_equivalents:
+  canonical_name: cash_and_cash_equivalents
+  aliases:
+    - cash and cash equivalents
+    - cash equivalents
+  statement_hints:
+    - balance sheet
+  value_type: currency
+operating_cash_flow:
+  canonical_name: operating_cash_flow
+  aliases:
+    - operating cash flow
+    - cash flow from operations
+    - net cash provided by operating activities
+    - net cash from operating activities
+  statement_hints:
+    - cash flow
+    - operating activities
+  value_type: currency
+free_cash_flow:
+  canonical_name: free_cash_flow
+  aliases:
+    - free cash flow
+    - fcf
+  statement_hints:
+    - cash flow
+  value_type: currency
+r_and_d_expense:
+  canonical_name: r_and_d_expense
+  aliases:
+    - research and development
+    - research and development expense
+    - r&d
+    - r and d
+  statement_hints:
+    - income statement
+  value_type: currency
+sga_expense:
+  canonical_name: sga_expense
+  aliases:
+    - selling general and administrative
+    - sg&a
+    - sga
+    - selling administrative
+  statement_hints:
+    - income statement
+  value_type: currency
+long_term_debt:
+  canonical_name: long_term_debt
+  aliases:
+    - long-term debt
+    - long term debt
+    - debt securities
+  statement_hints:
+    - balance sheet
+    - debt
+  value_type: currency
+inventory:
+  canonical_name: inventory
+  aliases:
+    - inventory
+    - inventories
+  statement_hints:
+    - balance sheet
+  value_type: currency
+dividends:
+  canonical_name: dividends
+  aliases:
+    - dividends
+    - cash dividends
+    - dividends paid
+  statement_hints:
+    - cash flow
+    - equity
+  value_type: currency
+eps:
+  canonical_name: eps
+  aliases:
+    - earnings per share
+    - eps
+    - diluted eps
+    - basic eps
+  statement_hints:
+    - income statement
+  value_type: per_share

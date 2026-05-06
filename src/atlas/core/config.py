@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     llm_max_output_tokens: int = 2000
     llm_reasoning_effort: str = "low"
     openai_api_key: SecretStr | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    query_planner_model: str = "gpt-5-nano"
+    query_planner_version: str = "query_planner_v1"
+    finance_metric_ontology_path: str = "configs/finance_metric_ontology.yaml"
+    query_planner_max_units: int = 6
 
     prompt_version: str = "v0.0-rag-answer-2026-05-03"
     default_top_k: int = 8
