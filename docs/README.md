@@ -34,11 +34,12 @@ V1 Atlas Advanced Hybrid Kernel
   设计：docs/Design-docs/01_V1_ADVANCED_HYBRID_KERNEL.md
   执行里程碑：docs/exec-plans/milestone/v1_advanced_hybrid_kernel_milestone.md
   实际架构：docs/exec-plans/version-arch/v1_advanced_hybrid_kernel_arch.md
-  历史检索实验：benchmarks/rag_quality/financebench/reports/full_v1_retrieval_experiment.md
+  FinanceBench 检索实验：benchmarks/rag_quality/financebench/retrieval_runs/full_v1_retrieval_20260506/report.md
+  Provider reset 消融：benchmarks/rag_quality/v1_hybrid_provider_reset/report.md
 
 V2 Atlas Research Runtime
   状态：仍是设计阶段
-  设计：docs/Design-docs/03_v2_atlas_research_runtime.md
+  设计：docs/Design-docs/02_V2_RESEARCH_RUNTIME.md
 ```
 
 

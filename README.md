@@ -286,8 +286,8 @@ curl -s -X POST \
 V1 的执行记录和实际架构在：
 
 ```text
-docs/exec-plans/milestone/v1_hybrid_kernel_milestone.md
-docs/exec-plans/version-arch/v1_hybrid_kernel_arch.md
+docs/exec-plans/milestone/v1_advanced_hybrid_kernel_milestone.md
+docs/exec-plans/version-arch/v1_advanced_hybrid_kernel_arch.md
 ```
 
 准备 FinanceBench frozen corpus：
@@ -344,13 +344,13 @@ python -m atlas.benchmark.financebench_retrieval \
 生成式 benchmark 会输出到：
 
 ```text
-benchmarks/financebench/runs/<run_id>/
+benchmarks/rag_quality/financebench/runs/<run_id>/
 ```
 
 retrieval-only benchmark 会输出到：
 
 ```text
-benchmarks/financebench/retrieval_runs/<run_id>/
+benchmarks/rag_quality/financebench/retrieval_runs/<run_id>/
 ```
 
 ## V0.1 验收流程

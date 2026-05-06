@@ -792,7 +792,8 @@ src/atlas/eval/v1_full.py
 src/atlas/eval/runner.py
 src/atlas/benchmark/financebench.py
 src/atlas/benchmark/financebench_retrieval.py
-benchmarks/rag_quality/financebench/reports/full_v1_retrieval_experiment.md
+benchmarks/rag_quality/financebench/retrieval_runs/full_v1_retrieval_20260506/report.md
+benchmarks/rag_quality/v1_hybrid_provider_reset/report.md
 ```
 
 已存在证据：

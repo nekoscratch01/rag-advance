@@ -55,7 +55,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--base-url", default="http://localhost:8000")
-    parser.add_argument("--out", default="benchmarks/financebench/runs")
+    parser.add_argument("--out", default="benchmarks/rag_quality/financebench/runs")
     parser.add_argument("--top-k", type=int, default=None)
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument(

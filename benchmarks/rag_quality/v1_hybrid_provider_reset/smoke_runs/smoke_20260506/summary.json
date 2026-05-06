@@ -1,17 +1,150 @@
 {
-  "case_count": 5,
-  "duration_seconds": 0.057,
+  "case_count": 100,
+  "duration_seconds": 0.996,
   "failure_buckets": {
     "bucket_counts": {
-      "answer_terms_miss@3": 3,
-      "expected_evidence_dropped_by_token_budget": 2,
-      "page_miss@3": 3,
-      "planned_not_run": 5
+      "answer_terms_miss@3": 60,
+      "expected_evidence_dropped_by_token_budget": 40,
+      "page_miss@3": 60,
+      "planned_not_run": 100
     },
     "buckets": {
       "answer_terms_miss@3": [
         {
           "case_id": "smoke_ibm_dividends_2021",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v01",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v02",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v03",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v04",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v05",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v06",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v07",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v08",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v09",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v10",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v11",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v12",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v13",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v14",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v15",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v16",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v17",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v18",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v19",
           "first_doc_rank": 1,
           "first_page_rank": null,
           "group": "filter_strategy",
@@ -26,6 +159,272 @@
         },
         {
           "case_id": "smoke_3m_capex_compare",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v01",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v01",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v02",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v02",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v03",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v03",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v04",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v04",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v05",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v05",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v06",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v06",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v07",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v07",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v08",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v08",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v09",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v09",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v10",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v10",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v11",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v11",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v12",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v12",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v13",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v13",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v14",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v14",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v15",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v15",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v16",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v16",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v17",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v17",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v18",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v18",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v19",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v19",
           "first_doc_rank": 1,
           "first_page_rank": null,
           "group": "candidate_shape",
@@ -46,11 +445,410 @@
           "first_page_rank": null,
           "group": "candidate_shape",
           "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v01",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v01",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v02",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v02",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v03",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v03",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v04",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v04",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v05",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v05",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v06",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v06",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v07",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v07",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v08",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v08",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v09",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v09",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v10",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v10",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v11",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v11",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v12",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v12",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v13",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v13",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v14",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v14",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v15",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v15",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v16",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v16",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v17",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v17",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v18",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v18",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v19",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v19",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
         }
       ],
       "page_miss@3": [
         {
           "case_id": "smoke_ibm_dividends_2021",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v01",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v02",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v03",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v04",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v05",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v06",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v07",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v08",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v09",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v10",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v11",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v12",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v13",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v14",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v15",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v16",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v17",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v18",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "filter_strategy",
+          "variant": "filter_must_have_hard"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v19",
           "first_doc_rank": 1,
           "first_page_rank": null,
           "group": "filter_strategy",
@@ -65,6 +863,272 @@
         },
         {
           "case_id": "smoke_3m_capex_compare",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v01",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v01",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v02",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v02",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v03",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v03",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v04",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v04",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v05",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v05",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v06",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v06",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v07",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v07",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v08",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v08",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v09",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v09",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v10",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v10",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v11",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v11",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v12",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v12",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v13",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v13",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v14",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v14",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v15",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v15",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v16",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v16",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v17",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v17",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v18",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v18",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v19",
+          "first_doc_rank": 1,
+          "first_page_rank": null,
+          "group": "candidate_shape",
+          "variant": "shape_token_budget_18"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v19",
           "first_doc_rank": 1,
           "first_page_rank": null,
           "group": "candidate_shape",
@@ -106,12 +1170,677 @@
           "first_page_rank": null,
           "group": "fusion",
           "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v01",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v01",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v01",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v01",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v01",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v02",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v02",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v02",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v02",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v02",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v03",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v03",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v03",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v03",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v03",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v04",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v04",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v04",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v04",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v04",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v05",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v05",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v05",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v05",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v05",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v06",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v06",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v06",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v06",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v06",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v07",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v07",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v07",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v07",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v07",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v08",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v08",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v08",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v08",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v08",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v09",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v09",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v09",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v09",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v09",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v10",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v10",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v10",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v10",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v10",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v11",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v11",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v11",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v11",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v11",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v12",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v12",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v12",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v12",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v12",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v13",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v13",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v13",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v13",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v13",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v14",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v14",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v14",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v14",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v14",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v15",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v15",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v15",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v15",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v15",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v16",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v16",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v16",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v16",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v16",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v17",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v17",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v17",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v17",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v17",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v18",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v18",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v18",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v18",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v18",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_2018_v19",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_3m_capex_compare_v19",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_apple_net_sales_2019_v19",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_msft_capex_2020_v19",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
+        },
+        {
+          "case_id": "smoke_ibm_dividends_2021_v19",
+          "first_doc_rank": null,
+          "first_page_rank": null,
+          "group": "fusion",
+          "variant": "fusion_qdrant_rrf_planned"
         }
       ]
     }
   },
-  "finished_at": "2026-05-06T05:42:44.227744+00:00",
-  "generated_at": "2026-05-06T05:42:44.227744+00:00",
+  "finished_at": "2026-05-06T07:21:19.013943+00:00",
+  "generated_at": "2026-05-06T07:21:19.013943+00:00",
   "groups": {
     "candidate_shape": [
       "shape_child_chunk",
@@ -150,324 +1879,345 @@
   ],
   "ontology_path": "configs/finance_metric_ontology.yaml",
   "run_id": "smoke_20260506",
-  "started_at": "2026-05-06T05:42:44.170297+00:00",
+  "started_at": "2026-05-06T07:21:18.017781+00:00",
   "variant_count": 20,
   "variant_results": {
     "filter_metadata_only": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "filter_must_have_hard": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {
-        "answer_terms_miss@3": 1,
-        "page_miss@3": 1
+        "answer_terms_miss@3": 20,
+        "page_miss@3": 20
       },
       "metrics": {
+        "MAP_answer_terms": 0.8,
+        "MAP_doc": 1.0,
+        "MAP_page": 0.8,
         "MRR_answer_terms": 0.8,
         "MRR_doc": 1.0,
         "MRR_page": 0.8,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 4,
+          "count": 100,
+          "hits": 80,
           "rate": 0.8
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 4,
+          "count": 100,
+          "hits": 80,
           "rate": 0.8
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 4,
+          "count": 100,
+          "hits": 80,
           "rate": 0.8
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 4,
+          "count": 100,
+          "hits": 80,
           "rate": 0.8
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 4,
+          "count": 100,
+          "hits": 80,
           "rate": 0.8
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 4,
+          "count": 100,
+          "hits": 80,
           "rate": 0.8
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "filter_must_terms_sparse_boost": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "filter_no_hard_filter": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "fusion_dense_only": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
-        "MRR_answer_terms": 0.9,
+        "MAP_answer_terms": 0.91,
+        "MAP_doc": 1.0,
+        "MAP_page": 0.91,
+        "MRR_answer_terms": 0.91,
         "MRR_doc": 1.0,
-        "MRR_page": 0.9,
+        "MRR_page": 0.91,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 82,
+          "rate": 0.82
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 82,
+          "rate": 0.82
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 82,
+          "rate": 0.82
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "fusion_python_weighted_rrf": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "fusion_qdrant_rrf_planned": {
       "completed_cases": 0,
       "failure_counts": {
-        "planned_not_run": 5
+        "planned_not_run": 100
       },
       "metrics": {
+        "MAP_answer_terms": null,
+        "MAP_doc": null,
+        "MAP_page": null,
         "MRR_answer_terms": null,
         "MRR_doc": null,
         "MRR_page": null,
@@ -512,675 +2262,714 @@
           "rate": null
         }
       },
-      "planned_cases": 5,
-      "total_cases": 5
+      "planned_cases": 100,
+      "total_cases": 100
     },
     "fusion_sparse_only": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "rerank_current_unit_candidate": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
-        "MRR_answer_terms": 0.9,
+        "MAP_answer_terms": 0.925,
+        "MAP_doc": 1.0,
+        "MAP_page": 0.925,
+        "MRR_answer_terms": 0.925,
         "MRR_doc": 1.0,
-        "MRR_page": 0.9,
+        "MRR_page": 0.925,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "rerank_full_plan_all_units_candidate": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "rerank_full_plan_summary_candidate": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
-        "MRR_answer_terms": 0.9,
+        "MAP_answer_terms": 0.925,
+        "MAP_doc": 1.0,
+        "MAP_page": 0.925,
+        "MRR_answer_terms": 0.925,
         "MRR_doc": 1.0,
-        "MRR_page": 0.9,
+        "MRR_page": 0.925,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "rerank_local_terms_candidate": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "rerank_original_query_candidate": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
-        "MRR_answer_terms": 0.9,
+        "MAP_answer_terms": 0.925,
+        "MAP_doc": 1.0,
+        "MAP_page": 0.925,
+        "MRR_answer_terms": 0.925,
         "MRR_doc": 1.0,
-        "MRR_page": 0.9,
+        "MRR_page": 0.925,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "rewrite_ontology_aliases": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "rewrite_should_terms": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "rewrite_unit_text": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
-        "MRR_answer_terms": 0.9,
+        "MAP_answer_terms": 0.925,
+        "MAP_doc": 1.0,
+        "MAP_page": 0.925,
+        "MRR_answer_terms": 0.925,
         "MRR_doc": 1.0,
-        "MRR_page": 0.9,
+        "MRR_page": 0.925,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 4,
-          "rate": 0.8
+          "count": 100,
+          "hits": 85,
+          "rate": 0.85
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "shape_child_chunk": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "shape_page_neighborhood": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "shape_parent_block": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {},
       "metrics": {
+        "MAP_answer_terms": 1.0,
+        "MAP_doc": 1.0,
+        "MAP_page": 1.0,
         "MRR_answer_terms": 1.0,
         "MRR_doc": 1.0,
         "MRR_page": 1.0,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     },
     "shape_token_budget_18": {
-      "completed_cases": 5,
+      "completed_cases": 100,
       "failure_counts": {
-        "answer_terms_miss@3": 2,
-        "expected_evidence_dropped_by_token_budget": 2,
-        "page_miss@3": 2
+        "answer_terms_miss@3": 40,
+        "expected_evidence_dropped_by_token_budget": 40,
+        "page_miss@3": 40
       },
       "metrics": {
+        "MAP_answer_terms": 0.6,
+        "MAP_doc": 1.0,
+        "MAP_page": 0.6,
         "MRR_answer_terms": 0.6,
         "MRR_doc": 1.0,
         "MRR_page": 0.6,
         "answer_terms_hit@1": {
-          "count": 5,
-          "hits": 3,
+          "count": 100,
+          "hits": 60,
           "rate": 0.6
         },
         "answer_terms_hit@3": {
-          "count": 5,
-          "hits": 3,
+          "count": 100,
+          "hits": 60,
           "rate": 0.6
         },
         "doc_hit@1": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "doc_hit@3": {
-          "count": 5,
-          "hits": 5,
+          "count": 100,
+          "hits": 100,
           "rate": 1.0
         },
         "page_hit@1": {
-          "count": 5,
-          "hits": 3,
+          "count": 100,
+          "hits": 60,
           "rate": 0.6
         },
         "page_hit@3": {
-          "count": 5,
-          "hits": 3,
+          "count": 100,
+          "hits": 60,
           "rate": 0.6
         },
         "parent_hit@1": {
-          "count": 5,
-          "hits": 3,
+          "count": 100,
+          "hits": 60,
           "rate": 0.6
         },
         "parent_hit@3": {
-          "count": 5,
-          "hits": 3,
+          "count": 100,
+          "hits": 60,
           "rate": 0.6
         }
       },
       "planned_cases": 0,
-      "total_cases": 5
+      "total_cases": 100
     }
   }
 }

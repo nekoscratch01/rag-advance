@@ -43,7 +43,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--cases", default="evals/financebench_cases.yaml")
     parser.add_argument("--modes", default=",".join(DEFAULT_MODES))
-    parser.add_argument("--out", default="benchmarks/financebench/retrieval_runs")
+    parser.add_argument("--out", default="benchmarks/rag_quality/financebench/retrieval_runs")
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument("--dense-top-k", type=int, default=50)

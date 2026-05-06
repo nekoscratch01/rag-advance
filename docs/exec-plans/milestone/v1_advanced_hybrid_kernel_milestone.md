@@ -20,12 +20,6 @@ docs/Design-docs/01_V1_ADVANCED_HYBRID_KERNEL.md
 docs/exec-plans/version-arch/v1_advanced_hybrid_kernel_arch.md
 ```
 
-差距审查起点：
-
-```text
-docs/exec-plans/milestone/v1_advanced_hybrid_kernel_gap_audit.md
-```
-
 ## 里程碑状态
 
 ```text
@@ -292,17 +286,17 @@ failure buckets
 已有 retrieval-only 主实验仍然有效：
 
 ```text
-benchmarks/rag_quality/financebench/reports/full_v1_retrieval_experiment.md
+benchmarks/rag_quality/financebench/retrieval_runs/full_v1_retrieval_20260506/report.md
 ```
 
 主 retrieval-only 结果：
 
-| 模式 | doc@10 | page@10 | MRR doc | MRR page | p50 ms | p95 ms |
-|---|---:|---:|---:|---:|---:|---:|
-| dense_only | 0.467 | 0.127 | 0.233 | 0.081 | 27 | 88 |
-| bm25_only | 0.787 | 0.207 | 0.448 | 0.113 | 4 | 7 |
-| hybrid_rrf | 0.727 | 0.213 | 0.398 | 0.112 | 45 | 59 |
-| hybrid_rrf_reranker | 0.813 | 0.267 | 0.520 | 0.146 | 747 | 1261 |
+| 模式 | doc@10 | page@10 | MRR doc | MRR page | MAP doc | MAP page | p50 ms | p95 ms |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| dense_only | 0.467 | 0.127 | 0.233 | 0.081 | 0.208 | 0.079 | 33 | 67 |
+| bm25_only | 0.787 | 0.207 | 0.448 | 0.113 | 0.404 | 0.112 | 6 | 10 |
+| hybrid_rrf | 0.727 | 0.213 | 0.398 | 0.112 | 0.343 | 0.105 | 47 | 61 |
+| hybrid_rrf_reranker | 0.813 | 0.267 | 0.520 | 0.146 | 0.460 | 0.139 | 502 | 690 |
 
 新增 full V1 benchmark runner 能额外测：
 

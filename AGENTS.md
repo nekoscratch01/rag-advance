@@ -30,7 +30,7 @@ benchmarks/
 
 ```text
 V0 Atlas Kernel：已实现的基础 RAG kernel。
-V1 Atlas Hybrid Kernel：检索质量主路径已实现并完成测评。
+V1 Atlas Advanced Hybrid Kernel：检索质量主路径已实现并完成测评。
 V2 Atlas Research Runtime：仍是设计阶段，尚未实现。
 ```
 
@@ -38,9 +38,10 @@ V2 Atlas Research Runtime：仍是设计阶段，尚未实现。
 
 ```text
 docs/exec-plans/milestone/already_implemented.md
-docs/exec-plans/milestone/v1_hybrid_kernel_milestone.md
-docs/exec-plans/version-arch/v1_hybrid_kernel_arch.md
-benchmarks/rag_quality/financebench/reports/full_v1_retrieval_experiment.md
+docs/exec-plans/milestone/v1_advanced_hybrid_kernel_milestone.md
+docs/exec-plans/version-arch/v1_advanced_hybrid_kernel_arch.md
+benchmarks/rag_quality/financebench/retrieval_runs/full_v1_retrieval_20260506/report.md
+benchmarks/rag_quality/v1_hybrid_provider_reset/report.md
 ```
 
 ## 必须记住的事实
@@ -58,16 +59,16 @@ V1 有检索测评证据，但还没有完整生成式答案可靠性测评。
 如果任务涉及 V0/V1 query、retrieval、evidence、cache 或测评：
 
 ```text
-1. 读 docs/exec-plans/version-arch/v1_hybrid_kernel_arch.md。
-2. 读 docs/exec-plans/milestone/v1_hybrid_kernel_milestone.md 的未完成项。
+1. 读 docs/exec-plans/version-arch/v1_advanced_hybrid_kernel_arch.md。
+2. 读 docs/exec-plans/milestone/v1_advanced_hybrid_kernel_milestone.md 的未完成项。
 3. 如果会影响检索质量，读对应测评报告。
 ```
 
 如果任务涉及 V2：
 
 ```text
-1. 读 docs/Design-docs/03_v2_atlas_research_runtime.md。
-2. 读 docs/exec-plans/milestone/v1_hybrid_kernel_milestone.md。
+1. 读 docs/Design-docs/02_V2_RESEARCH_RUNTIME.md。
+2. 读 docs/exec-plans/milestone/v1_advanced_hybrid_kernel_milestone.md。
 3. 先做 research job 脚手架，不要直接承诺 planner / 报告生成器质量。
 ```
 

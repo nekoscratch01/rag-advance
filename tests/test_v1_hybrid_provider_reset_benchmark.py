@@ -13,6 +13,7 @@ def test_provider_reset_smoke_writes_artifacts_and_required_groups(tmp_path) -> 
     assert (run.output_dir / "report.md").exists()
 
     summary = json.loads((run.output_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["case_count"] == 100
     assert set(summary["groups"]) == {
         "query_rewrite",
         "filter_strategy",
@@ -32,8 +33,8 @@ def test_provider_reset_smoke_marks_qdrant_rrf_as_planned(tmp_path) -> None:
     result = run.summary["variant_results"]["fusion_qdrant_rrf_planned"]
 
     assert result["completed_cases"] == 0
-    assert result["planned_cases"] == 5
-    assert result["failure_counts"] == {"planned_not_run": 5}
+    assert result["planned_cases"] == 100
+    assert result["failure_counts"] == {"planned_not_run": 100}
 
 
 def test_ontology_alias_rewrite_does_not_regress_smoke_page_recall(tmp_path) -> None:
@@ -52,9 +53,10 @@ def test_provider_reset_smoke_reports_answer_term_coverage(tmp_path) -> None:
 
     assert "answer_terms_hit@3" in metrics
     assert metrics["answer_terms_hit@3"]["rate"] == 0.8
+    assert metrics["MAP_page"] == 0.8
     assert run.summary["variant_results"]["filter_must_have_hard"]["failure_counts"][
         "answer_terms_miss@3"
-    ] == 1
+    ] == 20
 
 
 def test_sparse_boost_variant_repeats_must_terms_in_sparse_text(tmp_path) -> None:

@@ -41,20 +41,19 @@ Full V1 generated-answer benchmark runner
 
 ```text
 路线图 / 设计意图：
-  docs/Design-docs/00_overview.md
+  docs/Design-docs/00_ATLAS_OVERVIEW.md
   docs/Design-docs/01_V1_ADVANCED_HYBRID_KERNEL.md
-  docs/Design-docs/03_v2_atlas_research_runtime.md
+  docs/Design-docs/02_V2_RESEARCH_RUNTIME.md
 
 V1 执行里程碑：
   docs/exec-plans/milestone/v1_advanced_hybrid_kernel_milestone.md
-  docs/exec-plans/milestone/v1_hybrid_kernel_milestone.md
 
 V1 实际架构：
   docs/exec-plans/version-arch/v1_advanced_hybrid_kernel_arch.md
-  docs/exec-plans/version-arch/v1_hybrid_kernel_arch.md
 
 V1 测评实验报告：
-  benchmarks/rag_quality/financebench/reports/full_v1_retrieval_experiment.md
+  benchmarks/rag_quality/financebench/retrieval_runs/full_v1_retrieval_20260506/report.md
+  benchmarks/rag_quality/v1_hybrid_provider_reset/report.md
 ```
 
 ## 当前 V1 指标
@@ -62,15 +61,15 @@ V1 测评实验报告：
 主实验：
 
 ```text
-benchmarks/financebench/retrieval_runs/full_v1_retrieval
+benchmarks/rag_quality/financebench/retrieval_runs/full_v1_retrieval_20260506
 ```
 
-| 模式 | doc@10 | page@10 | MRR doc | MRR page |
-|---|---:|---:|---:|---:|
-| dense_only | 0.467 | 0.127 | 0.233 | 0.081 |
-| bm25_only | 0.787 | 0.207 | 0.448 | 0.113 |
-| hybrid_rrf | 0.727 | 0.213 | 0.398 | 0.112 |
-| hybrid_rrf_reranker | 0.813 | 0.267 | 0.520 | 0.146 |
+| 模式 | doc@10 | page@10 | MRR doc | MRR page | MAP doc | MAP page |
+|---|---:|---:|---:|---:|---:|---:|
+| dense_only | 0.467 | 0.127 | 0.233 | 0.081 | 0.208 | 0.079 |
+| bm25_only | 0.787 | 0.207 | 0.448 | 0.113 | 0.404 | 0.112 |
+| hybrid_rrf | 0.727 | 0.213 | 0.398 | 0.112 | 0.343 | 0.105 |
+| hybrid_rrf_reranker | 0.813 | 0.267 | 0.520 | 0.146 | 0.460 | 0.139 |
 
 ## 必须记住的实现事实
 

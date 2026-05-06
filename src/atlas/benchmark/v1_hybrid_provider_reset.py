@@ -20,6 +20,7 @@ DEFAULT_REPORT_DIR = Path("benchmarks/rag_quality/v1_hybrid_provider_reset/smoke
 DEFAULT_ONTOLOGY_PATH = Path("configs/finance_metric_ontology.yaml")
 HIT_KS = (1, 3)
 SPARSE_BOOST_REPEAT = 3
+DEFAULT_SYNTHETIC_CASE_COUNT = 100
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out", default=str(DEFAULT_REPORT_DIR))
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--ontology", default=str(DEFAULT_ONTOLOGY_PATH))
+    parser.add_argument("--case-count", type=int, default=DEFAULT_SYNTHETIC_CASE_COUNT)
     args = parser.parse_args(argv)
 
     run_id = args.run_id or datetime.now(UTC).strftime("provider_reset_%Y%m%dT%H%M%SZ")
@@ -93,6 +95,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=Path(args.out),
         run_id=run_id,
         ontology_path=Path(args.ontology),
+        case_count=args.case_count,
     )
     print(f"V1 hybrid provider reset smoke: {run.run_id}")
     print(f"Output: {run.output_dir}")
@@ -107,9 +110,10 @@ def run_provider_reset_smoke(
     output_dir: Path = DEFAULT_REPORT_DIR,
     run_id: str | None = None,
     ontology_path: Path = DEFAULT_ONTOLOGY_PATH,
+    case_count: int = DEFAULT_SYNTHETIC_CASE_COUNT,
 ) -> BenchmarkRun:
     ontology = FinanceMetricOntology.load(ontology_path)
-    cases = synthetic_cases()
+    cases = synthetic_cases(case_count=case_count)
     corpus = synthetic_corpus()
     configs = default_ablation_configs()
     run_id = run_id or datetime.now(UTC).strftime("provider_reset_%Y%m%dT%H%M%SZ")
@@ -691,6 +695,21 @@ def rank_metrics(
         "mrr_doc": reciprocal_rank(first_doc_rank),
         "mrr_page": reciprocal_rank(first_page_rank),
         "mrr_answer_terms": reciprocal_rank(first_answer_terms_rank),
+        "map_doc": average_precision(
+            candidates,
+            top_k,
+            lambda item: item.document_id == case.expected_document_id,
+        ),
+        "map_page": average_precision(
+            candidates,
+            top_k,
+            lambda item: page_matches(item, case.expected_page),
+        ),
+        "map_answer_terms": average_precision(
+            candidates,
+            top_k,
+            lambda item: answer_terms_match(item, case),
+        ),
         "first_doc_rank": first_doc_rank,
         "first_page_rank": first_page_rank,
         "first_parent_rank": first_parent_rank,
@@ -778,6 +797,11 @@ def summarize_records(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
     metrics["MRR_answer_terms"] = average_metric(
         record["metrics"]["mrr_answer_terms"] for record in completed
     )
+    metrics["MAP_doc"] = average_metric(record["metrics"]["map_doc"] for record in completed)
+    metrics["MAP_page"] = average_metric(record["metrics"]["map_page"] for record in completed)
+    metrics["MAP_answer_terms"] = average_metric(
+        record["metrics"]["map_answer_terms"] for record in completed
+    )
     return {
         "total_cases": len(records),
         "completed_cases": len(completed),
@@ -838,9 +862,9 @@ def build_smoke_report(summary: dict[str, Any]) -> str:
                 "",
                 (
                     "| 变体 | 已完成 | 计划项 | page@1 | page@3 | "
-                    "answer_terms@3 | MRR page | 失败桶 |"
+                    "answer_terms@3 | MRR page | MAP page | 失败桶 |"
                 ),
-                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
             ]
         )
         for variant in variants:
@@ -860,6 +884,7 @@ def build_smoke_report(summary: dict[str, Any]) -> str:
                         fmt_rate(metrics["page_hit@3"]),
                         fmt_rate(metrics["answer_terms_hit@3"]),
                         fmt_number(metrics["MRR_page"]),
+                        fmt_number(metrics["MAP_page"]),
                         failures or "-",
                     ]
                 )
@@ -873,6 +898,12 @@ def build_smoke_report(summary: dict[str, Any]) -> str:
             "filter_must_terms_sparse_boost 使用 repeat(must_have_terms, 3) 的 sparse input 重复词策略，不改 BM25 底层公式。",
             "",
             (
+                "本报告补充 MAP_doc / MAP_page / MAP_answer_terms，但 synthetic case "
+                "每条只有一个预期 evidence 目标，所以 MAP 在这里主要等价于"
+                "“正确证据排得有多靠前”；完整 MAP 结论仍要看 FinanceBench 150 条真实 eval。"
+            ),
+            "",
+            (
                 "这是离线 synthetic smoke，用来检查消融维度、trace 字段和"
                 "排序/过滤"
                 "取舍是否可解释；它不是 FinanceBench 全量质量结论，"
@@ -884,7 +915,34 @@ def build_smoke_report(summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def synthetic_cases() -> list[SyntheticCase]:
+def synthetic_cases(case_count: int = DEFAULT_SYNTHETIC_CASE_COUNT) -> list[SyntheticCase]:
+    base_cases = base_synthetic_cases()
+    if case_count <= len(base_cases):
+        return base_cases[:case_count]
+
+    cases: list[SyntheticCase] = []
+    for index in range(case_count):
+        base = base_cases[index % len(base_cases)]
+        variant = index // len(base_cases)
+        case_id = base.case_id if variant == 0 else f"{base.case_id}_v{variant:02d}"
+        cases.append(
+            SyntheticCase(
+                case_id=case_id,
+                question=question_variant(base, variant),
+                entity=base.entity,
+                periods=base.periods,
+                metric=base.metric,
+                expected_document_id=base.expected_document_id,
+                expected_page=base.expected_page,
+                expected_parent_id=base.expected_parent_id,
+                expected_terms=base.expected_terms,
+                local_should_terms=base.local_should_terms,
+            )
+        )
+    return cases
+
+
+def base_synthetic_cases() -> list[SyntheticCase]:
     return [
         SyntheticCase(
             case_id="smoke_3m_capex_2018",
@@ -950,6 +1008,42 @@ def synthetic_cases() -> list[SyntheticCase]:
             local_should_terms=("cash dividends", "dividends paid"),
         ),
     ]
+
+
+def question_variant(case: SyntheticCase, variant: int) -> str:
+    if variant == 0:
+        return case.question
+    period_text = " and ".join(case.periods)
+    metric_text = case.metric.replace("_", " ")
+    should_text = ", ".join(case.local_should_terms[:2])
+    templates = (
+        "Find the {entity} {period_text} {metric_text} amount and cite the annual report page.",
+        "Which annual report page supports {entity}'s {metric_text} figure for {period_text}?",
+        "Retrieve evidence for {entity} {period_text} {metric_text}; include table wording if the label is different.",
+        "For {entity}, what source text reports {metric_text} in {period_text}?",
+        "Locate the filing evidence for {entity} {period_text}: {should_text}.",
+        "Use the annual report wording to answer the {entity} {metric_text} question for {period_text}.",
+        "What does the source page say about {entity} {metric_text} during {period_text}?",
+        "I need the evidence page for {entity}'s {metric_text}, period {period_text}.",
+        "Show the table row or page context for {entity} {period_text} {metric_text}.",
+        "Where is {entity} {period_text} {metric_text} stated in the filing?",
+        "Pull the supporting text for {entity}; metric={metric_text}; period={period_text}.",
+        "Find source evidence, not a calculation, for {entity} {metric_text} {period_text}.",
+        "Which page contains {entity}'s {should_text} for {period_text}?",
+        "Retrieve the exact annual-report snippet for {entity} {period_text} {metric_text}.",
+        "What source passage supports the answer to: {question}",
+        "Find the relevant parent block for {entity} {metric_text} {period_text}.",
+        "Use lexical aliases if needed to locate {entity} {period_text} {metric_text}.",
+        "Identify the page-level evidence for {entity}'s reported {metric_text} in {period_text}.",
+        "Where can I verify {entity} {period_text} {metric_text} from the filing text?",
+    )
+    return templates[(variant - 1) % len(templates)].format(
+        entity=case.entity,
+        period_text=period_text,
+        metric_text=metric_text,
+        should_text=should_text or metric_text,
+        question=case.question,
+    )
 
 
 def synthetic_corpus() -> list[SyntheticChunk]:
@@ -1355,6 +1449,29 @@ def hit_at(rank: int | None, k: int) -> bool:
 
 def reciprocal_rank(rank: int | None) -> float:
     return 1.0 / rank if rank else 0.0
+
+
+def average_precision(
+    candidates: Sequence[Candidate],
+    top_k: int,
+    predicate,
+) -> float:
+    hits = 0
+    precision_sum = 0.0
+    matched = False
+    for fallback_rank, candidate in enumerate(candidates[:top_k], start=1):
+        rank = (
+            candidate.final_rank
+            or candidate.rerank_rank
+            or candidate.fusion_rank
+            or fallback_rank
+        )
+        if matched or not predicate(candidate):
+            continue
+        matched = True
+        hits += 1
+        precision_sum += hits / rank
+    return precision_sum
 
 
 def aggregate_bool(values) -> dict[str, Any]:

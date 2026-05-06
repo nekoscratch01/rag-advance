@@ -28,6 +28,7 @@ corpus/*
 # Raw benchmark run artifacts can be regenerated and are often large.
 # Keep curated human-readable benchmark reports under benchmarks/rag_quality.
 benchmarks/financebench/
+benchmarks/**/cases.jsonl
 
 # Local databases / scratch artifacts
 *.db
