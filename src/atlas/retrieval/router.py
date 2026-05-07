@@ -75,7 +75,10 @@ class ProviderRouter:
             provider = self.providers.get(provider_name)
             if provider is None:
                 provider_results.extend(
-                    _skipped_result(task, known=provider_name in self.known_providers)
+                    _provider_not_registered_result(
+                        task,
+                        known=provider_name in self.known_providers,
+                    )
                     for task in executable_tasks
                 )
                 continue
@@ -129,6 +132,33 @@ def _skipped_result(task: RetrievalTask, *, known: bool) -> ProviderResult:
             if known
             else f"unknown_provider:{task.provider}"
         )
+    )
+    trace = {
+        "provider": task.provider,
+        "task_id": task.task_id,
+        "unit_id": task.unit_id,
+        "status": "skipped_non_executable",
+        "reason": reason,
+        "planned_text": task.query_text,
+        "metadata_filter": dict(task.metadata_filter),
+    }
+    return ProviderResult(
+        provider=task.provider,
+        task_id=task.task_id,
+        unit_id=task.unit_id,
+        status="skipped_non_executable",
+        candidates=(),
+        latency_ms=0,
+        reason=reason,
+        trace=trace,
+    )
+
+
+def _provider_not_registered_result(task: RetrievalTask, *, known: bool) -> ProviderResult:
+    reason = (
+        f"provider_not_registered:{task.provider}"
+        if known
+        else f"unknown_provider:{task.provider}"
     )
     trace = {
         "provider": task.provider,

@@ -17,6 +17,7 @@ from atlas.query_runtime.service import QueryRuntime
 from atlas.retrieval.providers.text_hybrid.adapters.bm25 import BM25Retriever
 from atlas.retrieval.providers.text_hybrid.adapters.dense import DenseRetriever
 from atlas.retrieval.providers.text_hybrid.adapters.hybrid import HybridRetriever
+from atlas.retrieval.providers.graph import GraphProvider, PostgresGraphStore
 from atlas.retrieval.providers.text_hybrid import TextHybridProvider
 from atlas.retrieval.ranking.reranker import CrossEncoderReranker
 from atlas.retrieval.router import ProviderRouter
@@ -126,13 +127,26 @@ def get_text_hybrid_provider() -> TextHybridProvider:
 
 
 @lru_cache
+def get_graph_provider() -> GraphProvider:
+    settings = get_settings()
+    return GraphProvider(
+        store=PostgresGraphStore(),
+        max_context_tokens=settings.max_context_tokens,
+    )
+
+
+@lru_cache
 def get_provider_router() -> ProviderRouter:
+    settings = get_settings()
     providers = {}
-    if "hybrid" in executable_query_providers(get_settings()):
+    executable_providers = executable_query_providers(settings)
+    if "hybrid" in executable_providers:
         providers["hybrid"] = get_text_hybrid_provider()
+    if "graph" in executable_providers:
+        providers["graph"] = get_graph_provider()
     return ProviderRouter(
         providers,
-        known_providers=known_query_providers(get_settings()),
+        known_providers=known_query_providers(settings),
     )
 
 

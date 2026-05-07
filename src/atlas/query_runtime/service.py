@@ -71,8 +71,12 @@ class QueryRuntime:
         self.settings = settings
         self.retriever = retriever
         providers = {}
-        if retriever is not None and "hybrid" in executable_query_providers(settings):
-            providers["hybrid"] = retriever
+        if provider_router is None:
+            executable_providers = executable_query_providers(settings)
+            if retriever is not None and "hybrid" in executable_providers:
+                providers["hybrid"] = retriever
+            if "graph" in executable_providers:
+                providers["graph"] = _auto_wire_graph_provider(settings)
         self.provider_router = provider_router or ProviderRouter(
             providers,
             known_providers=known_query_providers(settings),
@@ -543,6 +547,15 @@ class QueryRuntime:
             db.commit()
             exc.trace_id = trace_id
             raise
+
+
+def _auto_wire_graph_provider(settings: Settings):
+    from atlas.retrieval.providers.graph import GraphProvider, PostgresGraphStore
+
+    return GraphProvider(
+        store=PostgresGraphStore(),
+        max_context_tokens=settings.max_context_tokens,
+    )
 
 
 def _fit_evidence_to_budget(evidence: list, max_tokens: int) -> list:

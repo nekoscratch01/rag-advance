@@ -1,6 +1,6 @@
 # V1 实际架构：Atlas Advanced Hybrid Kernel
 
-更新时间：2026-05-06
+更新时间：2026-05-07
 
 本文记录当前 V1 runtime 的真实架构。Design 文档说明目标；本文说明已经落地的模块、API、DB trace payload、eval 入口和仍需补齐的 TODO。
 
@@ -8,10 +8,10 @@
 
 ```text
 最终架构：hybrid / sql / graph 三个 provider。
-V1 runtime：只启用 hybrid provider。
+V1 默认 runtime：只启用 hybrid provider。
 V1 provider 实现：TextHybridProvider。
 SQLProvider：未实现。
-GraphProvider：未实现。
+GraphProvider：V3.0 已有 opt-in walking skeleton，默认不属于 V1 hybrid runtime。
 ```
 
 ---
@@ -73,9 +73,9 @@ FinanceBench JSONL 是冻结测评产物，不是 runtime 存储。
 
 | Provider | 代码状态 | V1 可执行 | 说明 |
 |---|---|---:|---|
-| `hybrid` | `src/atlas/retrieval/providers/text_hybrid/` | 是 | V1 唯一 provider。内部有 dense、BM25、metric_alias、section、table textual lanes。 |
+| `hybrid` | `src/atlas/retrieval/providers/text_hybrid/` | 是 | V1 默认 provider。内部有 dense、BM25、metric_alias、section、table textual lanes。 |
 | `sql` | 无 `SQLProvider` runtime | 否 | V4 候选。V1 不做 Text-to-SQL、计算、cell provenance。 |
-| `graph` | 无 `GraphProvider` runtime | 否 | V3 候选。V1 不做 GraphRAG 主路径。 |
+| `graph` | `src/atlas/retrieval/providers/graph/` | 默认否；V3.0 opt-in | V3.0 walking skeleton：local/path、Postgres grounding、trace auditability；不声明质量提升，不默认参与 V1。 |
 
 配置入口：
 
@@ -83,6 +83,7 @@ FinanceBench JSONL 是冻结测评产物，不是 runtime 存储。
 src/atlas/core/config.py
   Settings.query_planner_known_providers = "hybrid,sql,graph"
   Settings.query_runtime_executable_providers = "hybrid"
+  IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid", "graph")
   known_query_providers(settings)
   executable_query_providers(settings)
 ```
@@ -91,8 +92,10 @@ src/atlas/core/config.py
 
 ```text
 src/atlas/api/dependencies.py
-  get_text_hybrid_provider() -> TextHybridProvider
-  get_provider_router() -> ProviderRouter({"hybrid": TextHybridProvider})
+  默认 get_text_hybrid_provider() -> TextHybridProvider
+  默认 get_provider_router() -> ProviderRouter({"hybrid": TextHybridProvider})
+  get_graph_provider() -> GraphProvider(PostgresGraphStore)
+  V3.0 opt-in -> ProviderRouter({"hybrid": TextHybridProvider, "graph": GraphProvider})
 ```
 
 V1 的 `QueryPlan` 可以保留最终 provider vocabulary：
@@ -107,11 +110,19 @@ ProviderName = Literal["hybrid", "sql", "graph"]
 provider = "hybrid" | "sql" | "graph"
 ```
 
-当前 V1 execution 只能执行：
+默认 V1 execution 只能执行：
 
 ```text
 provider = "hybrid"
 ```
+
+V3.0 graph opt-in 的配置口径是：
+
+```bash
+ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid,graph
+```
+
+Phase 5 已把这个配置接入依赖装配和 QueryRuntime auto-wire。默认 V1 结论不变：hybrid-only。
 
 如果本地代码仍看到 `retrievers` 字段，应按 provider 语义解释：
 
@@ -210,16 +221,18 @@ build_fallback_plan(...)
 
 ```text
 schema 知道 hybrid / sql / graph。
-runtime 通过 ProviderRouter 只注册 TextHybridProvider。
+默认 runtime 通过 ProviderRouter 只注册 TextHybridProvider。
 如果 LLM 为 SQL-like 或 graph-like query 输出 sql / graph，这是合法 semantic plan。
-这些 provider 在 V1 不可执行，会生成 skipped_non_executable ProviderResult。
+sql 在 V1 不可执行，会生成 skipped_non_executable ProviderResult。
+graph 只有在 V3.0 opt-in 装配后才可执行；默认 V1 仍 skipped_non_executable。
 ```
 
 V1 架构要求：
 
 ```text
 prompt 必须声明 known_providers = ["hybrid", "sql", "graph"]。
-runtime 必须声明 executable_providers = ["hybrid"]。
+默认 runtime 必须声明 executable_providers = ["hybrid"]。
+V3.0 opt-in runtime 可声明 executable_providers = ["hybrid", "graph"]。
 non-executable provider 必须进入 trace，不进入 evidence。
 默认不自动 hybrid_backfill。
 ```
@@ -245,7 +258,8 @@ src/atlas/query_orchestrator/prompts.py
 prompts.py 会把 known_query_providers(settings) 注入 planner instructions。
 llm_planner.py 会按 known_providers 生成 schema enum。
 validation 失败会把错误反馈给 LLM 重试。
-ProviderRouter 会把 sql/graph 编译为 skipped_non_executable provider result。
+ProviderRouter 会把默认不可执行的 sql/graph 编译为 skipped_non_executable provider result。
+V3.0 opt-in 注册 GraphProvider 后，graph task 可执行 local/path，但仍不能绕过 Evidence Kernel。
 ```
 
 ### 4.2 Compound Unit Retry
@@ -586,9 +600,13 @@ formula verification
 
 ## 8. Graph 边界
 
-V1 没有 GraphProvider。
+V1 默认 runtime 没有启用 GraphProvider。V3.0 已在以下路径实现 opt-in walking skeleton：
 
-未来 graph 的合理定位：
+```text
+src/atlas/retrieval/providers/graph/
+```
+
+V3.0 graph 的实际定位：
 
 ```text
 GraphProvider -> graph candidates -> source text grounding -> EvidenceBlock
@@ -610,7 +628,7 @@ graph node / edge / community summary -> VIP EvidenceBlock -> answer
 5. 没有 source anchor 的 graph claim 不能作为 citation。
 ```
 
-AAPL/MSFT/Vision Pro 这类 query 的 semantic plan 可以包含 graph/sql 意图；V1 execution 只执行 hybrid，不能声称执行了 graph traversal。
+AAPL/MSFT/Vision Pro 这类 query 的 semantic plan 可以包含 graph/sql 意图。默认 V1 execution 只执行 hybrid，不能声称执行了 graph traversal。V3.0 opt-in graph 只能执行 local/path walking skeleton；没有质量测评前，不能声称 graph 改善检索或答案可靠性。
 
 ---
 
@@ -994,9 +1012,9 @@ Table Lane:
   - 不引入 SQL / calculation / cell provenance 到 V1
 
 Graph:
-  - 保持未启用
-  - 未来只作为 candidate generator
-  - 设计 hub node explosion 防护
+  - 默认 V1 runtime 保持未启用
+  - V3.0 opt-in GraphProvider 已作为 local/path candidate generator walking skeleton 落地
+  - 继续补 hub node explosion 防护测评和 graph retrieval eval
 
 Eval:
   - full generated-answer reliability report
@@ -1014,7 +1032,8 @@ V1 的真实架构不是“三个 provider 都已经实现”。
 
 ```text
 Atlas 已经把 Evidence Kernel 的 provider contract 预留为 hybrid / sql / graph。
-V1 runtime 当前只启用 hybrid。
-TextHybridProvider 是 V1 的唯一 provider 实现。
-SQL 和 graph 在 V1 中只能作为未来架构上下文出现，不能出现在 executable plan 或答案事实里。
+V1 默认 runtime 当前只启用 hybrid。
+TextHybridProvider 是 V1 默认 provider 实现。
+V3.0 GraphProvider 已作为 opt-in walking skeleton 存在，但不默认启用，也不提供质量提升声明。
+SQL 在 V1 中仍只能作为未来架构上下文出现，不能出现在 executable plan 或答案事实里。
 ```

@@ -5,6 +5,49 @@
 
 ---
 
+## 0. 实现状态（2026-05-07）
+
+本文仍是 V3 设计意图和路线图；V3.0 walking skeleton 的实现事实以 milestone / version-arch 为准：
+
+```text
+docs/exec-plans/milestone/v3_graph_context_milestone.md
+docs/exec-plans/version-arch/v3_graph_provider_arch.md
+```
+
+V3.0 已经落地的部分：
+
+```text
+JSON graph fixture loader
+Postgres graph tables
+PostgresGraphStore
+GraphStore Protocol
+GraphCache Protocol + NoOpGraphCache
+GraphProvider local/path modes
+graph source anchors -> chunks.text grounding
+Candidate(provider="graph", text=chunks.text)
+Evidence(text=chunks.text)
+ProviderRouter / QueryRuntime contract-level integration
+```
+
+V3.0 的边界：
+
+```text
+默认 V1 runtime 仍是 hybrid-only。
+GraphProvider 是 opt-in walking skeleton，不声明检索质量或答案质量提升。
+global / community / DRIFT 仍是 V3.1+ 设计，不是 V3.0 可执行能力。
+Graph-only text、summary、description 不能作为 Evidence 文本。
+```
+
+opt-in 运行口径：
+
+```bash
+ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid,graph
+```
+
+Phase 5 已把 opt-in 装配接入 dependencies / QueryRuntime：只有显式配置 `hybrid,graph` 时才注册 GraphProvider；默认产品路径仍保持 V1 hybrid-only。
+
+---
+
 ## 1. V3 的定位
 
 V3 不是：
@@ -32,6 +75,8 @@ QueryPlan
 ```
 
 Graph 输出如果不能回到 source evidence，就不能作为强引用证据。
+
+V3.0 已实现其中最小可审计链路：local/path graph lookup 回到 Postgres `chunks.text` 后，才进入 Candidate / Evidence。全局主题、community 概览和 DRIFT 搜索仍是后续版本设计。
 
 ---
 
@@ -270,7 +315,7 @@ entity A + entity B
  -> retrieve source chunks for path edges
 ```
 
-### 6.3 Global Search
+### 6.3 Global Search（V3.1+ 设计）
 
 适用：
 
@@ -288,7 +333,7 @@ query
  -> source grounding
 ```
 
-### 6.4 DRIFT-style Search
+### 6.4 DRIFT-style Search（V3.1+ 设计）
 
 适用：
 
@@ -305,7 +350,7 @@ global community hints
  -> source text grounding
 ```
 
-### 6.5 Graph-assisted Text Retrieval
+### 6.5 Graph-assisted Text Retrieval（V3.1+ 设计）
 
 Graph 不直接回答，只生成检索线索：
 
@@ -314,7 +359,7 @@ query -> graph entities / related terms / neighbor concepts
  -> expand V1 TextHybrid retrieval units
 ```
 
-这对 V1/V2 非常实用。
+这对当前 V1 和未来 V2 都非常实用。
 
 ---
 
@@ -392,6 +437,18 @@ class GraphCandidate:
     metadata: dict
 ```
 
+V3.0 代码中 `GraphCandidate` 是 graph-only context object；它不会直接进入 Evidence。GraphProvider 会把可 grounding 的 graph item 转成通用 `Candidate`：
+
+```python
+Candidate(
+    provider="graph",
+    source_type="text_chunk",
+    text=chunks.text,
+)
+```
+
+这里的 `text` 必须来自 source chunk，而不是 graph summary / description。
+
 ---
 
 ## 9. Graph Evidence Adapter
@@ -462,12 +519,10 @@ graph_priority = f(
 
 ## 11. Graph Store 选择
 
-### 11.1 初期
+### 11.1 V3.0 实现
 
 ```text
-Postgres tables + adjacency lists
-or
-NetworkX-style local graph for prototype
+Postgres graph tables + SQLAlchemy PostgresGraphStore
 ```
 
 适合：
@@ -476,7 +531,9 @@ NetworkX-style local graph for prototype
 小规模、可控、低基础设施复杂度
 ```
 
-### 11.2 成熟期
+V3.0 使用现有 runtime storage，不引入 Neo4j、Redis Queue 或 graph-native store。NetworkX-style local graph 只保留为设计备选，不是当前实现事实。
+
+### 11.2 成熟期设计
 
 ```text
 Neo4j
@@ -612,7 +669,7 @@ conflict_detection_rate
 
 ## 14. API
 
-### 14.1 Graph query debug
+### 14.1 Graph query debug（未实现 API）
 
 ```http
 POST /v3/graph/retrieve
@@ -626,7 +683,7 @@ POST /v3/graph/retrieve
 }
 ```
 
-### 14.2 Graph index inspect
+### 14.2 Graph index inspect（未实现 API）
 
 ```http
 GET /v3/graph/entities/{entity_id}
@@ -636,26 +693,32 @@ GET /v3/graph/communities/{community_id}
 
 ### 14.3 Provider integration
 
-GraphProvider 也通过通用接口被 V1/V2 调用：
+GraphProvider 也通过通用接口被当前 V1 调用；未来 V2 若接入 GraphProvider，也应复用同一接口：
 
 ```python
-provider.retrieve(task: RetrievalTask) -> list[Candidate]
+provider.retrieve_provider_result(...) -> ProviderResult
 ```
+
+V3.0 走 ProviderRouter / ProviderResult 合约；旧式 `provider.retrieve(task)` 只是早期接口草图。
 
 ---
 
 ## 15. Implementation Plan
 
-### V3.0 Graph Contract
+### V3.0 Graph Contract（walking skeleton 已实现）
 
 ```text
-- GraphCandidate schema
+- GraphCandidate / GraphEntity / GraphRelationship / GraphPath schema
+- GraphStore Protocol
+- Postgres graph tables + PostgresGraphStore
+- JSON fixture loader
 - Graph Evidence Adapter
-- Provider Router integration
+- ProviderRouter / QueryRuntime contract-level integration
 - source grounding contract
+- local/path graph modes
 ```
 
-### V3.1 Entity Layer
+### V3.1 Entity Layer（设计）
 
 ```text
 - entity extraction
@@ -664,7 +727,7 @@ provider.retrieve(task: RetrievalTask) -> list[Candidate]
 - entity lookup
 ```
 
-### V3.2 Relationship Layer
+### V3.2 Relationship Layer（设计）
 
 ```text
 - relationship extraction
@@ -673,7 +736,7 @@ provider.retrieve(task: RetrievalTask) -> list[Candidate]
 - local search
 ```
 
-### V3.3 Graph Retrieval
+### V3.3 Graph Retrieval（设计）
 
 ```text
 - local search
@@ -681,7 +744,7 @@ provider.retrieve(task: RetrievalTask) -> list[Candidate]
 - graph-assisted text retrieval
 ```
 
-### V3.4 Community / Global
+### V3.4 Community / Global（设计）
 
 ```text
 - community detection
@@ -689,7 +752,7 @@ provider.retrieve(task: RetrievalTask) -> list[Candidate]
 - global search
 ```
 
-### V3.5 DRIFT-style Search
+### V3.5 DRIFT-style Search（设计）
 
 ```text
 - global hints -> local expansion
@@ -701,14 +764,21 @@ provider.retrieve(task: RetrievalTask) -> list[Candidate]
 
 ## 16. Definition of Done
 
-V3 完成时必须满足：
+V3.0 walking skeleton 已满足：
 
 ```text
 - GraphProvider 能接收 RetrievalTask。
-- Graph 能索引 entity、relationship、source anchors。
-- Local search 能返回 grounded source chunks。
-- Global/community search 能返回 source-grounded EvidenceBlock。
+- Graph fixture 能写入 Postgres graph tables。
+- PostgresGraphStore 能 lookup entity、neighbors、local one/two-hop paths 和 anchors。
+- Local/path search 能返回 grounded source chunks。
 - Graph 输出不会绕过 Evidence Builder。
+- Trace 能记录 entity resolution、cap/truncation、graph candidates、grounding 和 evidence pack。
+```
+
+完整 V3 仍需满足：
+
+```text
+- Global/community search 能返回 source-grounded EvidenceBlock。
 - Router 能区分什么时候用 Graph、什么时候不用。
 - Eval 能证明 graph 对关系/全局问题有增益。
 ```

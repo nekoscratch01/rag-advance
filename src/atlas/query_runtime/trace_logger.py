@@ -136,11 +136,21 @@ def get_query_trace_metadata(query_id: str) -> dict[str, Any]:
 
 def _retriever_type(evidence: Evidence) -> str:
     metadata = evidence.metadata or {}
-    sources = metadata.get("retrieved_by") or metadata.get("sources")
+    provider = str(
+        metadata.get("provider")
+        or metadata.get("retrieval_provider")
+        or metadata.get("provider_name")
+        or ""
+    ).strip().lower()
+    if provider == "graph" or metadata.get("graph_candidate_id") is not None:
+        return "graph"
+    sources = evidence.retrieved_by or metadata.get("retrieved_by") or metadata.get("sources")
     if isinstance(sources, str):
         sources = [sources]
     if isinstance(sources, list | tuple | set):
-        normalized = {str(source) for source in sources}
+        normalized = {str(source).strip().lower() for source in sources}
+        if "graph" in normalized:
+            return "graph"
         if {"dense", "lexical"} <= normalized or {"dense", "bm25"} <= normalized:
             return "hybrid"
         if "lexical" in normalized or "bm25" in normalized:

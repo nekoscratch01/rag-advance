@@ -198,3 +198,33 @@ def test_sql_and_graph_units_compile_to_skipped_tasks() -> None:
     assert all(task.provider_status == "skipped_non_executable" for task in tasks)
     assert all(task.lanes == () for task in tasks)
     assert all(task.unsupported_reason for task in tasks)
+
+
+def test_graph_unit_is_ready_when_explicitly_executable_but_sql_is_not() -> None:
+    plan = QueryPlan(
+        plan_id="plan_future_opt_in",
+        original_query="Who supplies Apple Vision Pro displays?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_sql",
+                purpose="numerical_aggregation",
+                text="Apple Microsoft R&D 2023",
+                provider="sql",
+            ),
+            RetrievalUnit(
+                unit_id="u_graph",
+                purpose="supply_chain_discovery",
+                text="Apple Vision Pro display suppliers",
+                provider="graph",
+            ),
+        ),
+    )
+
+    tasks = tasks_from_plan(plan, executable_providers=("hybrid", "graph"))
+
+    assert [task.provider for task in tasks] == ["sql", "graph"]
+    assert tasks[0].provider_status == "skipped_non_executable"
+    assert tasks[0].unsupported_reason == "provider_not_executable_in_v1:sql"
+    assert tasks[1].provider_status == "ready"
+    assert tasks[1].unsupported_reason is None
+    assert tasks[1].lanes == ()

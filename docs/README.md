@@ -40,6 +40,19 @@ V1 Atlas Advanced Hybrid Kernel
 V2 Atlas Research Runtime
   状态：仍是设计阶段
   设计：docs/Design-docs/02_V2_RESEARCH_RUNTIME.md
+
+V3.0 Atlas GraphProvider
+  状态：GraphProvider walking skeleton 已实现；默认不启用，作为 opt-in provider 接入 Evidence Kernel
+  边界：证明 provider contract、Postgres grounding pivot 和 trace auditability；不声明检索或答案质量提升
+  设计：docs/Design-docs/03_V3_GRAPH_CONTEXT.md
+  执行里程碑：docs/exec-plans/milestone/v3_graph_context_milestone.md
+  实际架构：docs/exec-plans/version-arch/v3_graph_provider_arch.md
+```
+
+默认 runtime 仍是 V1 hybrid-only。V3 graph 需要显式 opt-in：
+
+```bash
+ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid,graph
 ```
 
 

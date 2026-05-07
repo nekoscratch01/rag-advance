@@ -4,7 +4,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid",)
+IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid", "graph")
 
 
 class Settings(BaseSettings):
