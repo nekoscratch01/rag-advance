@@ -1,0 +1,115 @@
+{
+  "fixture_schema_version": "graph_fixture_v1",
+  "graph_version": "test_graph_v3_fixture",
+  "corpus_version": "test_corpus_v1",
+  "metadata": {
+    "source": "unit_test_fixture",
+    "notes": "DO_NOT_USE_AS_EVIDENCE: graph metadata is not source chunk evidence."
+  },
+  "entities": [
+    {
+      "entity_id": "ent_apple",
+      "canonical_name": "Apple Inc.",
+      "entity_type": "company",
+      "aliases": [
+        "Apple"
+      ],
+      "description": "DO_NOT_USE_AS_EVIDENCE: graph entity description only.",
+      "metadata": {
+        "hub_like": true
+      },
+      "anchors": [
+        {
+          "anchor_id": "anch_ent_apple_chunk_supply",
+          "chunk_id": "chunk_supply",
+          "text_span": "Apple"
+        }
+      ]
+    },
+    {
+      "entity_id": "ent_supplier_network",
+      "canonical_name": "Supplier Network",
+      "entity_type": "theme",
+      "aliases": [
+        "suppliers"
+      ],
+      "metadata": {},
+      "anchors": [
+        {
+          "anchor_id": "anch_ent_supplier_chunk_supply",
+          "chunk_id": "chunk_supply",
+          "text_span": "supplier network"
+        }
+      ]
+    },
+    {
+      "entity_id": "ent_vision_pro",
+      "canonical_name": "Vision Pro",
+      "entity_type": "product",
+      "aliases": [],
+      "metadata": {},
+      "anchors": [
+        {
+          "anchor_id": "anch_ent_vision_chunk_product",
+          "chunk_id": "chunk_product",
+          "text_span": "Vision Pro"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_id": "rel_apple_supplier",
+      "source_entity_id": "ent_apple",
+      "target_entity_id": "ent_supplier_network",
+      "relation_type": "depends_on",
+      "confidence": 0.82,
+      "description": "DO_NOT_USE_AS_EVIDENCE: graph relationship description only.",
+      "metadata": {
+        "lane": "local"
+      },
+      "anchors": [
+        {
+          "anchor_id": "anch_rel_apple_supplier",
+          "chunk_id": "chunk_supply",
+          "text_span": "supplier constraints"
+        }
+      ]
+    },
+    {
+      "relationship_id": "rel_apple_vision_pro",
+      "source_entity_id": "ent_apple",
+      "target_entity_id": "ent_vision_pro",
+      "relation_type": "produces",
+      "confidence": 0.9,
+      "metadata": {
+        "lane": "local"
+      },
+      "anchors": [
+        {
+          "anchor_id": "anch_rel_apple_vision_pro",
+          "chunk_id": "chunk_product",
+          "text_span": "Vision Pro"
+        }
+      ]
+    }
+  ],
+  "communities": [
+    {
+      "community_id": "comm_apple_supply",
+      "level": 0,
+      "summary": "DO_NOT_USE_AS_EVIDENCE: graph community summary only.",
+      "metadata": {
+        "entity_ids": [
+          "ent_apple",
+          "ent_supplier_network",
+          "ent_vision_pro"
+        ],
+        "relationship_ids": [
+          "rel_apple_supplier",
+          "rel_apple_vision_pro"
+        ]
+      }
+    }
+  ]
+}
