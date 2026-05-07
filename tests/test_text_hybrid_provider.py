@@ -437,6 +437,44 @@ def test_retrieve_with_plan_empty_tasks_stays_on_run_path() -> None:
     assert bm25.evidence_calls == []
 
 
+def test_retrieve_candidates_with_plan_uses_run_without_evidence_pack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider, _, _ = _provider(max_context_tokens=6000)
+    plan = QueryPlan(
+        plan_id="plan_candidates",
+        original_query="What was 3M FY2018 capex?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="candidate_probe",
+                text="3M FY2018 capex",
+                provider="hybrid",
+                metadata={"internal_lanes": ["bm25"]},
+            ),
+        ),
+    )
+
+    def fail_if_evidence_is_built(*args, **kwargs):
+        raise AssertionError("retrieve_candidates_with_plan should not build evidence_pack")
+
+    monkeypatch.setattr(provider, "_candidates_to_evidence", fail_if_evidence_is_built)
+
+    candidates = provider.retrieve_candidates_with_plan(
+        object(),
+        query=plan.original_query,
+        top_k=2,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=plan,
+        retrieval_tasks=tasks_from_plan(plan),
+    )
+
+    assert candidates
+    assert candidates[0].metadata["source_anchor"]["chunk_id"] == candidates[0].chunk_id
+    assert candidates[0].metadata["query_plan_id"] == "plan_candidates"
+
+
 def test_text_hybrid_provider_keeps_legacy_modes_available() -> None:
     provider, dense, bm25 = _provider()
 

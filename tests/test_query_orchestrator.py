@@ -369,8 +369,17 @@ def test_llm_planner_retries_with_validation_feedback(monkeypatch) -> None:
     provider_enum = calls[0]["text"]["format"]["schema"]["properties"]["retrieval_units"][
         "items"
     ]["properties"]["provider"]["enum"]
+    metadata_filter_schema = calls[0]["text"]["format"]["schema"]["properties"][
+        "metadata_filter"
+    ]
+    unit_metadata_filter_schema = calls[0]["text"]["format"]["schema"]["properties"][
+        "retrieval_units"
+    ]["items"]["properties"]["metadata_filter"]
     assert plan.retrieval_units[0].provider == "hybrid"
     assert provider_enum == ["hybrid", "sql", "graph"]
+    assert metadata_filter_schema["additionalProperties"] is False
+    assert unit_metadata_filter_schema["additionalProperties"] is False
+    assert set(metadata_filter_schema["required"]) == set(metadata_filter_schema["properties"])
     assert "Known retrieval providers" in calls[0]["instructions"]
     assert "Executable providers in the current V1 runtime: [hybrid]" in calls[0]["instructions"]
     assert "Do not disguise sql or graph intent as hybrid" in calls[0]["instructions"]

@@ -131,7 +131,7 @@ class LLMQueryPlanner:
             entities=tuple(_entity_from_raw(item) for item in raw.get("entities") or ()),
             periods=tuple(_period_from_raw(item) for item in raw.get("periods") or ()),
             metrics=metrics,
-            metadata_filter=_dict_value(raw.get("metadata_filter")),
+            metadata_filter=_metadata_filter_value(raw.get("metadata_filter")),
             retrieval_units=tuple(
                 _retrieval_unit_from_raw(item, index)
                 for index, item in enumerate(raw.get("retrieval_units") or ())
@@ -206,7 +206,7 @@ def _retrieval_unit_from_raw(item: Any, index: int) -> RetrievalUnit:
         purpose=str(raw.get("purpose") or "llm_generated"),
         text=str(raw.get("text") or ""),
         provider=provider,  # type: ignore[arg-type]
-        metadata_filter=_dict_value(raw.get("metadata_filter")),
+        metadata_filter=_metadata_filter_value(raw.get("metadata_filter")),
         must_have_terms=tuple(str(value) for value in raw.get("must_have_terms") or ()),
         should_terms=tuple(str(value) for value in raw.get("should_terms") or ()),
         top_k=int(raw.get("top_k") or 10),
@@ -248,10 +248,7 @@ def _llm_plan_schema(known_providers: tuple[str, ...]) -> dict[str, Any]:
                 "type": "array",
                 "items": _metric_schema(),
             },
-            "metadata_filter": {
-                "type": "object",
-                "additionalProperties": True,
-            },
+            "metadata_filter": _metadata_filter_schema(),
             "retrieval_units": {
                 "type": "array",
                 "items": _retrieval_unit_schema(known_providers),
@@ -325,10 +322,7 @@ def _retrieval_unit_schema(known_providers: tuple[str, ...]) -> dict[str, Any]:
                 "type": "string",
                 "enum": list(known_providers),
             },
-            "metadata_filter": {
-                "type": "object",
-                "additionalProperties": True,
-            },
+            "metadata_filter": _metadata_filter_schema(),
             "must_have_terms": string_array,
             "should_terms": string_array,
             "top_k": {"type": "integer"},
@@ -345,6 +339,37 @@ def _retrieval_unit_schema(known_providers: tuple[str, ...]) -> dict[str, Any]:
             "top_k",
             "weight",
         ],
+    }
+
+
+def _metadata_filter_schema() -> dict[str, Any]:
+    string_or_null = {"type": ["string", "null"]}
+    integer_or_null = {"type": ["integer", "null"]}
+    string_array = {"type": "array", "items": {"type": "string"}}
+    properties = {
+        "document_ids": string_array,
+        "document_type": string_or_null,
+        "filing_type": string_or_null,
+        "file_type": string_or_null,
+        "section_name": string_or_null,
+        "section_title": string_or_null,
+        "company": string_or_null,
+        "ticker": string_or_null,
+        "year": string_or_null,
+        "fiscal_year": string_or_null,
+        "source_type": string_or_null,
+        "language": string_or_null,
+        "parent_id": string_or_null,
+        "title": string_or_null,
+        "source_uri": string_or_null,
+        "page_start": integer_or_null,
+        "page_end": integer_or_null,
+    }
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": properties,
+        "required": list(properties),
     }
 
 
@@ -416,6 +441,26 @@ def _reject_legacy_filters(raw: dict[str, Any], context: str) -> None:
 
 def _dict_value(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _metadata_filter_value(value: Any) -> dict[str, Any]:
+    raw = _dict_value(value)
+    metadata_filter: dict[str, Any] = {}
+    for key, item in raw.items():
+        if item is None:
+            continue
+        if isinstance(item, list):
+            values = [str(value) for value in item if value is not None and str(value)]
+            if values:
+                metadata_filter[str(key)] = values
+            continue
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                metadata_filter[str(key)] = text
+            continue
+        metadata_filter[str(key)] = item
+    return metadata_filter
 
 
 def _optional_text(value: Any) -> str | None:

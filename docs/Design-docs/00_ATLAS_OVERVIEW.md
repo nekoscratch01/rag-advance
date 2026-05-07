@@ -174,8 +174,9 @@ Query Plane 决定：
 
 ```text
 这个问题是单一事实查询，还是多步研究任务？
-该用 TextHybrid、Graph、SQL、Memory、Tool 中的哪些 Provider？
-每个 Provider 分配多少 top_k、延迟、token、成本预算？
+语义计划应该表达 `hybrid` / `sql` / `graph` 中的哪类 provider 意图？
+当前 runtime 能执行哪些 provider、哪些只能进入 skipped trace？
+每个 retrieval unit 分配多少 top_k、延迟、token、成本预算？
 ```
 
 ### 3.2 Evidence Plane

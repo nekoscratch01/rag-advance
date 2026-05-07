@@ -45,7 +45,7 @@ def get_ingestion_service() -> IngestionService:
 
 
 @lru_cache
-def get_dense_retriever() -> DenseRetriever:
+def _get_dense_adapter() -> DenseRetriever:
     settings = get_settings()
     return DenseRetriever(
         settings=settings,
@@ -55,7 +55,7 @@ def get_dense_retriever() -> DenseRetriever:
 
 
 @lru_cache
-def get_bm25_retriever() -> BM25Retriever:
+def _get_bm25_adapter() -> BM25Retriever:
     settings = get_settings()
     return BM25Retriever(
         settings=settings,
@@ -79,8 +79,8 @@ def get_retriever():
 def get_text_hybrid_provider() -> TextHybridProvider:
     settings = get_settings()
     hybrid_rerank = HybridRetriever(
-        get_dense_retriever(),
-        get_bm25_retriever(),
+        _get_dense_adapter(),
+        _get_bm25_adapter(),
         rrf_k=settings.hybrid_rrf_k,
         rrf_top_k=settings.rrf_top_k,
         reranker=get_reranker(),
@@ -92,8 +92,8 @@ def get_text_hybrid_provider() -> TextHybridProvider:
         max_context_tokens=settings.max_context_tokens,
     )
     hybrid_rrf = HybridRetriever(
-        get_dense_retriever(),
-        get_bm25_retriever(),
+        _get_dense_adapter(),
+        _get_bm25_adapter(),
         rrf_k=settings.hybrid_rrf_k,
         rrf_top_k=settings.rrf_top_k,
         reranker=None,
@@ -108,8 +108,8 @@ def get_text_hybrid_provider() -> TextHybridProvider:
     if default_mode == "hybrid" and not settings.reranker_enabled:
         default_mode = "hybrid_rrf"
     return TextHybridProvider(
-        dense_retriever=get_dense_retriever(),
-        bm25_retriever=get_bm25_retriever(),
+        dense_retriever=_get_dense_adapter(),
+        bm25_retriever=_get_bm25_adapter(),
         hybrid_rrf_retriever=hybrid_rrf,
         hybrid_rerank_retriever=hybrid_rerank,
         default_mode=default_mode,

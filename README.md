@@ -55,7 +55,11 @@ uvicorn atlas.main:app --reload
 curl -s http://localhost:8000/v1/documents/ingest \
   -H 'Content-Type: application/json' \
   -d '{
-    "paths": ["samples/demo_knowledge.md", "samples/atlas_notes.txt"],
+    "paths": [
+      "samples/v1_evidence_kernel.md",
+      "samples/demo_knowledge.md",
+      "samples/atlas_notes.txt"
+    ],
     "metadata": {"source_type": "sample"}
   }' | python -m json.tool
 ```
@@ -83,7 +87,7 @@ citations 和 trace。
 curl -s http://localhost:8000/v1/query \
   -H 'Content-Type: application/json' \
   -d '{
-    "query": "历史 V0.0 baseline 的目标是什么？",
+    "query": "Atlas V1 Evidence Kernel 的 runtime 主路径是什么？",
     "top_k": 8
   }' | python -m json.tool
 ```
