@@ -286,6 +286,8 @@ def _candidate_trace_payload(candidate: Any) -> dict[str, Any]:
 def _router_status(results: list[ProviderResult]) -> str:
     if not results:
         return "empty"
+    if all(result.status == "empty" for result in results):
+        return "empty"
     executed = any(result.status in {"executed", "empty"} for result in results)
     skipped = any(result.status == "skipped_non_executable" for result in results)
     failed = any(result.status == "failed" for result in results)

@@ -56,6 +56,34 @@ class _HybridProvider:
         )
 
 
+class _EmptyProvider:
+    def __init__(self, provider: str) -> None:
+        self.provider = provider
+
+    def retrieve_provider_result(
+        self,
+        db,
+        *,
+        query,
+        top_k,
+        filters,
+        options,
+        query_plan,
+        retrieval_tasks,
+    ):
+        return ProviderResult(
+            provider=self.provider,
+            task_id=None if len(retrieval_tasks) != 1 else retrieval_tasks[0].task_id,
+            unit_id=None if len(retrieval_tasks) != 1 else retrieval_tasks[0].unit_id,
+            status="empty",
+            candidates=(),
+            evidence=(),
+            latency_ms=1,
+            reason="no_results",
+            trace={"provider": self.provider, "status": "empty"},
+        )
+
+
 class _StaticOrchestrator:
     def __init__(self, plan: QueryPlan) -> None:
         self.plan_value = plan
@@ -166,6 +194,45 @@ def test_provider_router_respects_task_non_executable_status_even_if_registered(
     assert result.evidence == ()
     assert result.provider_results[0].provider == "sql"
     assert result.provider_results[0].status == "skipped_non_executable"
+
+
+def test_provider_router_trace_status_empty_when_all_provider_results_empty() -> None:
+    plan = QueryPlan(
+        plan_id="plan_empty",
+        original_query="Find graph and text evidence that does not exist.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="empty_text_lookup",
+                text="missing text evidence",
+                provider="hybrid",
+            ),
+            RetrievalUnit(
+                unit_id="u_graph",
+                purpose="empty_graph_lookup",
+                text="missing graph evidence",
+                provider="graph",
+            ),
+        ),
+    )
+    tasks = tasks_from_plan(plan, executable_providers=("hybrid", "graph"))
+    router = ProviderRouter(
+        {"hybrid": _EmptyProvider("hybrid"), "graph": _EmptyProvider("graph")}
+    )
+
+    result = router.retrieve(
+        _DB(),
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={},
+        query_plan=plan,
+        retrieval_tasks=tasks,
+    )
+
+    assert result.evidence == ()
+    assert [item.status for item in result.provider_results] == ["empty", "empty"]
+    assert result.trace["status"] == "empty"
 
 
 def test_provider_router_rejects_internal_lane_registration() -> None:

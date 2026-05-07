@@ -523,7 +523,7 @@ def test_degree_cap_default_and_truncation_trace_include_hub_metadata() -> None:
     assert task_trace["cap_config"]["degree_cap"] == DEFAULT_DEGREE_CAP
 
 
-def test_graph_provider_emits_only_grounded_candidates_and_no_graph_evidence() -> None:
+def test_graph_provider_emits_grounded_candidates_and_graph_evidence() -> None:
     entity = _entity("ent_local", "LocalCo")
     store = _FakeGraphStore(
         entities=(entity,),
@@ -544,19 +544,41 @@ def test_graph_provider_emits_only_grounded_candidates_and_no_graph_evidence() -
     )
 
     assert result.status == "executed"
-    assert result.evidence == ()
+    assert result.evidence
+    assert result.evidence_pack is not None
+    assert result.evidence[0].text == "Grounded chunk text from source storage."
+    assert result.evidence_pack.prompt_blocks[0].text == "Grounded chunk text from source storage."
+    assert result.evidence_pack.prompt_blocks[0].source_type == "text_chunk"
+    assert result.trace["evidence_count"] == 1
+    assert result.trace["evidence_pack_id"] == result.evidence_pack.pack_id
+    assert result.trace["dropped_evidence_count"] == 0
     assert result.candidates
     assert all(isinstance(candidate, Candidate) for candidate in result.candidates)
     assert all(not isinstance(candidate, GraphCandidate) for candidate in result.candidates)
     candidate = result.candidates[0]
     assert candidate.provider == "graph"
+    assert candidate.source_type == "text_chunk"
     assert candidate.text == "Grounded chunk text from source storage."
     assert candidate.metadata["graph_candidate_id"].startswith("graph_local:")
     assert candidate.metadata["grounded_source_chunk_ids"] == ["chunk_graph"]
+    assert candidate.metadata["entity_ids"] == ["ent_local", "ent_neighbor"]
+    assert candidate.metadata["relationship_ids"] == ["rel_local"]
+    assert candidate.metadata["graph_score"] == 0.8
+    assert candidate.metadata["grounding_strength"] == 1.0
+    assert candidate.metadata["retrieval_task_id"] == candidate.retrieval_task_id
+    assert candidate.metadata["retrieval_unit_id"] == candidate.retrieval_unit_id
     assert candidate.metadata["graph"]["graph_candidate_id"] == candidate.metadata["graph_candidate_id"]
+    assert candidate.metadata["graph"]["source_type"] == "graph_neighborhood"
     assert candidate.metadata["graph"]["grounded_source_chunk_ids"] == ["chunk_graph"]
     json.dumps(candidate.metadata["source_anchor"])
     json.dumps(candidate.metadata)
+    evidence = result.evidence[0]
+    assert evidence.metadata["provider"] == "graph"
+    assert evidence.metadata["source_type"] == "text_chunk"
+    assert evidence.metadata["graph_candidate_id"] == candidate.metadata["graph_candidate_id"]
+    assert evidence.metadata["grounded_source_chunk_ids"] == ["chunk_graph"]
+    assert evidence.metadata["retrieval_task_id"] == candidate.retrieval_task_id
+    assert evidence.metadata["retrieval_unit_id"] == candidate.retrieval_unit_id
     assert "graph_text" not in repr(result.evidence)
 
 
@@ -584,17 +606,25 @@ def test_grounded_source_chunk_ids_only_include_hydrated_candidate_chunk() -> No
     )
 
     assert result.status == "executed"
-    assert result.evidence == ()
+    assert result.evidence
+    assert result.evidence_pack is not None
     assert len(result.candidates) == 1
     candidate = result.candidates[0]
     assert candidate.chunk_id == "chunk_graph"
     assert candidate.metadata["grounded_source_chunk_ids"] == ["chunk_graph"]
     assert candidate.metadata["graph"]["grounded_source_chunk_ids"] == ["chunk_graph"]
     assert candidate.metadata["source_anchor"]["chunk_id"] == "chunk_graph"
+    assert result.evidence[0].chunk_id == "chunk_graph"
+    assert result.evidence[0].text == candidate.text
+    assert result.evidence_pack.prompt_blocks[0].chunk_ids == ("chunk_graph",)
     assert [
         anchor["chunk_id"]
         for anchor in result.trace["graph_candidates"][0]["source_anchors"]
     ] == ["chunk_graph", "missing_chunk"]
+    assert all(
+        "text_span" not in anchor
+        for anchor in result.trace["graph_candidates"][0]["source_anchors"]
+    )
 
 
 def _plan(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict
 import time
 from typing import Any
 
@@ -25,6 +24,11 @@ from atlas.retrieval.providers.graph.models import (
     GraphFilters,
     GraphNeighborhood,
     GraphPath,
+)
+from atlas.retrieval.providers.graph.evidence import (
+    build_graph_evidence_from_candidates,
+    graph_source_anchor_payload,
+    sanitize_graph_metadata,
 )
 from atlas.retrieval.providers.graph.postgres_store import PostgresGraphStore
 from atlas.retrieval.providers.graph.store import GraphStore
@@ -51,6 +55,8 @@ class GraphProvider:
         max_hops: int = DEFAULT_MAX_HOPS,
         max_paths: int = DEFAULT_MAX_PATHS,
         max_source_chunks_per_result: int = DEFAULT_MAX_SOURCE_CHUNKS_PER_RESULT,
+        max_context_tokens: int | None = 6000,
+        max_blocks: int | None = None,
     ) -> None:
         self.store = store or PostgresGraphStore()
         self.default_graph_version = default_graph_version
@@ -58,6 +64,8 @@ class GraphProvider:
         self.max_hops = max_hops
         self.max_paths = max_paths
         self.max_source_chunks_per_result = max_source_chunks_per_result
+        self.max_context_tokens = max_context_tokens
+        self.max_blocks = max_blocks
 
     def retrieve_provider_result(
         self,
@@ -118,6 +126,20 @@ class GraphProvider:
             if len(candidates) >= top_k:
                 break
 
+        candidates = candidates[:top_k]
+        evidence_result = (
+            build_graph_evidence_from_candidates(
+                candidates,
+                max_context_tokens=self.max_context_tokens,
+                max_blocks=_evidence_max_blocks(self.max_blocks, top_k),
+                plan_id=query_plan.plan_id,
+            )
+            if candidates
+            else None
+        )
+        evidence = evidence_result.evidence if evidence_result is not None else ()
+        evidence_pack = evidence_result.evidence_pack if evidence_result is not None else None
+
         latency_ms = int((time.perf_counter() - started) * 1000)
         status = "executed" if candidates else "empty"
         reason = None if candidates else _first_reason(reasons, task_traces)
@@ -126,6 +148,9 @@ class GraphProvider:
             task_traces=task_traces,
             graph_items=graph_items,
             candidates=candidates,
+            evidence_count=len(evidence),
+            evidence_pack_id=evidence_pack.pack_id if evidence_pack else None,
+            dropped_evidence_count=len(evidence_pack.dropped_blocks) if evidence_pack else 0,
             latency_ms=latency_ms,
             reason=reason,
             default_cap_config={
@@ -133,6 +158,8 @@ class GraphProvider:
                 "max_hops": self.max_hops,
                 "max_paths": self.max_paths,
                 "max_source_chunks_per_result": self.max_source_chunks_per_result,
+                "max_context_tokens": self.max_context_tokens,
+                "max_blocks": self.max_blocks,
             },
         )
         return ProviderResult(
@@ -140,9 +167,9 @@ class GraphProvider:
             task_id=None if len(retrieval_tasks) != 1 else retrieval_tasks[0].task_id,
             unit_id=None if len(retrieval_tasks) != 1 else retrieval_tasks[0].unit_id,
             status=status,
-            candidates=tuple(candidates[:top_k]),
-            evidence=(),
-            evidence_pack=None,
+            candidates=tuple(candidates),
+            evidence=evidence,
+            evidence_pack=evidence_pack,
             latency_ms=latency_ms,
             reason=reason,
             trace=trace,
@@ -475,6 +502,12 @@ def _task_is_ready(task: RetrievalTask) -> bool:
     return str(task.provider_status).strip().lower() in SUPPORTED_PROVIDER_STATUSES
 
 
+def _evidence_max_blocks(configured: int | None, top_k: int) -> int | None:
+    if configured is None:
+        return max(0, top_k)
+    return max(0, min(configured, top_k))
+
+
 def _explicit_graph_mode(task: RetrievalTask) -> str | None:
     metadata = dict(task.metadata or {})
     mode = _first_text(
@@ -678,7 +711,9 @@ def _neighborhood_graph_item(
         "graph_version": graph_filters.graph_version,
         "entity_ids": _dedupe_strings(entity_ids),
         "relationship_ids": relationship_ids,
-        "source_anchors": [asdict(anchor) for anchor in neighborhood.source_anchors],
+        "source_anchors": [
+            graph_source_anchor_payload(anchor) for anchor in neighborhood.source_anchors
+        ],
         "graph_score": score,
         "grounding_strength": 1.0 if neighborhood.source_anchors else 0.0,
         "metadata": {
@@ -705,7 +740,9 @@ def _path_graph_item(
         "graph_version": graph_filters.graph_version,
         "entity_ids": path.entity_ids,
         "relationship_ids": path.relationship_ids,
-        "source_anchors": [asdict(anchor) for anchor in path.source_anchors],
+        "source_anchors": [
+            graph_source_anchor_payload(anchor) for anchor in path.source_anchors
+        ],
         "graph_score": path.score,
         "grounding_strength": 1.0 if path.source_anchors else 0.0,
         "metadata": {
@@ -772,36 +809,48 @@ def _candidate_from_chunk(
     rank: int,
 ) -> Candidate:
     document = getattr(chunk, "document", None)
-    metadata = _chunk_metadata(chunk, document)
+    metadata = sanitize_graph_metadata(_chunk_metadata(chunk, document))
     graph_score = _float_or_zero(graph_item.get("graph_score"))
-    source_anchor = asdict(anchor)
+    grounding_strength = _float_or_zero(graph_item.get("grounding_strength"))
+    source_anchor = graph_source_anchor_payload(anchor)
     candidate_chunk_id = str(getattr(chunk, "chunk_id", None) or anchor.chunk_id or "")
     graph_candidate_id = _optional_str(graph_item.get("candidate_id"))
-    entity_ids = list(graph_item.get("entity_ids") or ())
-    relationship_ids = list(graph_item.get("relationship_ids") or ())
+    entity_ids = _dedupe_strings(graph_item.get("entity_ids") or ())
+    relationship_ids = _dedupe_strings(graph_item.get("relationship_ids") or ())
     grounded_source_chunk_ids = _dedupe_strings((candidate_chunk_id,))
     graph_path = _graph_path_metadata(graph_item)
-    graph_metadata = {
-        "graph_candidate_id": graph_candidate_id,
-        "mode": graph_item.get("mode"),
-        "source_type": graph_item.get("source_type"),
-        "graph_version": graph_item.get("graph_version"),
-        "entity_ids": entity_ids,
-        "relationship_ids": relationship_ids,
-        "grounded_source_chunk_ids": grounded_source_chunk_ids,
-        "graph_score": graph_score,
-        "grounding_strength": graph_item.get("grounding_strength"),
-        "metadata": dict(graph_item.get("metadata") or {}),
-    }
+    graph_metadata = sanitize_graph_metadata(
+        {
+            "provider": GRAPH_PROVIDER,
+            "graph_candidate_id": graph_candidate_id,
+            "mode": graph_item.get("mode"),
+            "source_type": graph_item.get("source_type"),
+            "graph_version": graph_item.get("graph_version"),
+            "entity_ids": entity_ids,
+            "relationship_ids": relationship_ids,
+            "grounded_source_chunk_ids": grounded_source_chunk_ids,
+            "graph_score": graph_score,
+            "grounding_strength": grounding_strength,
+            "retrieval_task_id": task.task_id,
+            "retrieval_unit_id": task.unit_id,
+            "metadata": dict(graph_item.get("metadata") or {}),
+        }
+    )
     if graph_path is not None:
-        graph_metadata["graph_path"] = graph_path
+        graph_metadata["graph_path"] = sanitize_graph_metadata(graph_path)
     metadata.update(
         {
             "provider": GRAPH_PROVIDER,
             "query_plan_id": query_plan.plan_id,
             "graph_candidate_id": graph_candidate_id,
+            "entity_ids": entity_ids,
+            "relationship_ids": relationship_ids,
+            "graph_score": graph_score,
+            "grounding_strength": grounding_strength,
             "grounded_source_chunk_ids": grounded_source_chunk_ids,
             "source_anchor": source_anchor,
+            "retrieval_task_id": task.task_id,
+            "retrieval_unit_id": task.unit_id,
             "graph": graph_metadata,
             "graph_provider": {
                 "provider": GRAPH_PROVIDER,
@@ -810,7 +859,8 @@ def _candidate_from_chunk(
         }
     )
     if graph_path is not None:
-        metadata["graph_path"] = graph_path
+        metadata["graph_path"] = sanitize_graph_metadata(graph_path)
+    metadata = sanitize_graph_metadata(metadata)
     document_id = _first_text(
         getattr(document, "document_id", None),
         getattr(chunk, "document_id", None),
@@ -818,7 +868,7 @@ def _candidate_from_chunk(
     ) or ""
     source_title = _first_text(
         getattr(document, "title", None),
-        anchor.metadata.get("source_title") if isinstance(anchor.metadata, dict) else None,
+        getattr(document, "source_title", None),
         document_id,
     ) or document_id
     return Candidate(
@@ -850,7 +900,7 @@ def _candidate_from_chunk(
         section_title=getattr(chunk, "section_title", None),
         parent_id=getattr(chunk, "parent_id", None) or anchor.parent_id,
         provider=GRAPH_PROVIDER,
-        source_type="graph_grounded_chunk",
+        source_type="text_chunk",
         lane=str(graph_item.get("mode") or GRAPH_PROVIDER),
         retrieval_task_id=task.task_id,
         retrieval_unit_id=task.unit_id,
@@ -1015,9 +1065,12 @@ def _provider_trace(
     task_traces: list[dict[str, Any]],
     graph_items: list[dict[str, Any]],
     candidates: list[Candidate],
+    evidence_count: int,
+    evidence_pack_id: str | None,
+    dropped_evidence_count: int,
     latency_ms: int,
     reason: str | None,
-    default_cap_config: dict[str, int],
+    default_cap_config: dict[str, Any],
 ) -> dict[str, Any]:
     truncated_reasons = _dedupe_strings(
         item.get("truncated_reason") for item in task_traces if item.get("truncated_reason")
@@ -1032,7 +1085,9 @@ def _provider_trace(
         "tasks": task_traces,
         "graph_candidates": [_trace_graph_item(item) for item in graph_items],
         "candidate_count": len(candidates),
-        "evidence_count": 0,
+        "evidence_count": evidence_count,
+        "evidence_pack_id": evidence_pack_id,
+        "dropped_evidence_count": dropped_evidence_count,
         "retrieval_latency_ms": latency_ms,
         "truncated": any(bool(item.get("truncated")) for item in task_traces),
         "hub_cap_applied": any(bool(item.get("hub_cap_applied")) for item in task_traces),
@@ -1062,11 +1117,13 @@ def _provider_trace(
 
 
 def _trace_graph_item(item: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in item.items()
-        if key != "_source_anchors"
-    }
+    return sanitize_graph_metadata(
+        {
+            key: value
+            for key, value in item.items()
+            if key != "_source_anchors"
+        }
+    )
 
 
 def _graph_filters_payload(graph_filters: GraphFilters | None) -> dict[str, Any]:

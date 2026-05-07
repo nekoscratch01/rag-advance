@@ -9,6 +9,13 @@ from atlas.retrieval.providers.graph.cache import (
     graph_cache_relation_types_part,
     graph_cache_sequence_part,
 )
+from atlas.retrieval.providers.graph.evidence import (
+    GraphEvidenceBuildResult,
+    build_graph_evidence_from_candidates,
+    build_graph_evidence_pack_from_candidates,
+    graph_source_anchor_payload,
+    sanitize_graph_metadata,
+)
 from atlas.retrieval.providers.graph.models import (
     DEFAULT_DEGREE_CAP,
     DEFAULT_MAX_HOPS,
@@ -52,6 +59,7 @@ __all__ = [
     "GRAPH_CACHE_KEY_SEPARATOR",
     "GraphCache",
     "GraphCandidate",
+    "GraphEvidenceBuildResult",
     "GraphCandidateSourceType",
     "GraphEntity",
     "GraphEntityRef",
@@ -71,9 +79,13 @@ __all__ = [
     "SourceAnchor",
     "SupportedGraphMode",
     "UnsupportedGraphMode",
+    "build_graph_evidence_from_candidates",
+    "build_graph_evidence_pack_from_candidates",
     "canonical_graph_relation_types",
     "graph_cache_key",
     "graph_cache_prefix",
     "graph_cache_relation_types_part",
     "graph_cache_sequence_part",
+    "graph_source_anchor_payload",
+    "sanitize_graph_metadata",
 ]
