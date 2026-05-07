@@ -1,13 +1,30 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    PrimaryKeyConstraint,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+GRAPH_INDEX_STATUS_PENDING = "pending"
+WHOLE_CHUNK_TEXT_SPAN_HASH = "whole_chunk"
 
 
 class Base(DeclarativeBase):
@@ -79,6 +96,299 @@ class Chunk(Base):
 
     document: Mapped[Document] = relationship(back_populates="chunks")
     parent_block: Mapped[ParentBlock | None] = relationship(back_populates="chunks")
+
+
+class GraphIndex(Base):
+    __tablename__ = "graph_indexes"
+
+    graph_version: Mapped[str] = mapped_column(String(128), primary_key=True)
+    corpus_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    fixture_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    fixture_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    loader_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_counts_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=GRAPH_INDEX_STATUS_PENDING,
+        server_default=text("'pending'"),
+        nullable=False,
+    )
+    loaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class GraphEntityRecord(Base):
+    __tablename__ = "graph_entities"
+    __table_args__ = (
+        PrimaryKeyConstraint("graph_version", "entity_id", name="pk_graph_entities"),
+        UniqueConstraint(
+            "graph_version",
+            "entity_type",
+            "canonical_name_norm",
+            name="uq_graph_entities_version_type_name",
+        ),
+        Index("ix_graph_entities_graph_version", "graph_version"),
+        Index("ix_graph_entities_entity_type", "entity_type"),
+        Index("ix_graph_entities_canonical_name_norm", "canonical_name_norm"),
+    )
+
+    graph_version: Mapped[str] = mapped_column(
+        ForeignKey(
+            "graph_indexes.graph_version",
+            name="fk_graph_entities_graph_version",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+        nullable=False,
+    )
+    entity_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    canonical_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    canonical_name_norm: Mapped[str] = mapped_column(String(512), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    aliases_json: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class GraphRelationshipRecord(Base):
+    __tablename__ = "graph_relationships"
+    __table_args__ = (
+        PrimaryKeyConstraint("graph_version", "relationship_id", name="pk_graph_relationships"),
+        ForeignKeyConstraint(
+            ["graph_version", "source_entity_id"],
+            ["graph_entities.graph_version", "graph_entities.entity_id"],
+            name="fk_graph_relationships_source_entity",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["graph_version", "target_entity_id"],
+            ["graph_entities.graph_version", "graph_entities.entity_id"],
+            name="fk_graph_relationships_target_entity",
+            ondelete="CASCADE",
+        ),
+        Index("ix_graph_relationships_graph_version", "graph_version"),
+        Index("ix_graph_relationships_source", "source_entity_id"),
+        Index("ix_graph_relationships_target", "target_entity_id"),
+        Index("ix_graph_relationships_relation_type", "relation_type"),
+        Index("ix_graph_relationships_graph_source", "graph_version", "source_entity_id"),
+        Index("ix_graph_relationships_graph_target", "graph_version", "target_entity_id"),
+        Index("ix_graph_relationships_graph_relation", "graph_version", "relation_type"),
+    )
+
+    graph_version: Mapped[str] = mapped_column(
+        ForeignKey(
+            "graph_indexes.graph_version",
+            name="fk_graph_relationships_graph_version",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+        nullable=False,
+    )
+    relationship_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    relation_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    confidence: Mapped[float] = mapped_column(
+        Float,
+        default=1.0,
+        server_default=text("1.0"),
+        nullable=False,
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class GraphEntityAnchor(Base):
+    __tablename__ = "graph_entity_anchors"
+    __table_args__ = (
+        PrimaryKeyConstraint("graph_version", "anchor_id", name="pk_graph_entity_anchors"),
+        ForeignKeyConstraint(
+            ["graph_version", "entity_id"],
+            ["graph_entities.graph_version", "graph_entities.entity_id"],
+            name="fk_graph_entity_anchors_entity",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "graph_version",
+            "entity_id",
+            "chunk_id",
+            "text_span_hash",
+            name="uq_graph_entity_anchors_entity_chunk_span",
+        ),
+        Index("ix_graph_entity_anchors_graph_version", "graph_version"),
+        Index("ix_graph_entity_anchors_entity_id", "entity_id"),
+        Index("ix_graph_entity_anchors_graph_entity", "graph_version", "entity_id"),
+        Index("ix_graph_entity_anchors_chunk_id", "chunk_id"),
+    )
+
+    anchor_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    graph_version: Mapped[str] = mapped_column(String(128), primary_key=True, nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    chunk_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "chunks.chunk_id",
+            name="fk_graph_entity_anchors_chunk",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    text_span: Mapped[str | None] = mapped_column(Text, nullable=True)
+    text_span_hash: Mapped[str] = mapped_column(
+        String(128),
+        default=WHOLE_CHUNK_TEXT_SPAN_HASH,
+        server_default=text("'whole_chunk'"),
+        nullable=False,
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class GraphRelationshipAnchor(Base):
+    __tablename__ = "graph_relationship_anchors"
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "graph_version",
+            "anchor_id",
+            name="pk_graph_relationship_anchors",
+        ),
+        ForeignKeyConstraint(
+            ["graph_version", "relationship_id"],
+            ["graph_relationships.graph_version", "graph_relationships.relationship_id"],
+            name="fk_graph_relationship_anchors_relationship",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "graph_version",
+            "relationship_id",
+            "chunk_id",
+            "text_span_hash",
+            name="uq_graph_relationship_anchors_relationship_chunk_span",
+        ),
+        Index("ix_graph_relationship_anchors_graph_version", "graph_version"),
+        Index("ix_graph_relationship_anchors_relationship_id", "relationship_id"),
+        Index(
+            "ix_graph_relationship_anchors_graph_relationship",
+            "graph_version",
+            "relationship_id",
+        ),
+        Index("ix_graph_relationship_anchors_chunk_id", "chunk_id"),
+    )
+
+    anchor_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    graph_version: Mapped[str] = mapped_column(String(128), primary_key=True, nullable=False)
+    relationship_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    chunk_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "chunks.chunk_id",
+            name="fk_graph_relationship_anchors_chunk",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    text_span: Mapped[str | None] = mapped_column(Text, nullable=True)
+    text_span_hash: Mapped[str] = mapped_column(
+        String(128),
+        default=WHOLE_CHUNK_TEXT_SPAN_HASH,
+        server_default=text("'whole_chunk'"),
+        nullable=False,
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class GraphCommunity(Base):
+    __tablename__ = "graph_communities"
+    __table_args__ = (
+        PrimaryKeyConstraint("graph_version", "community_id", name="pk_graph_communities"),
+        Index("ix_graph_communities_graph_version", "graph_version"),
+        Index("ix_graph_communities_graph_level", "graph_version", "level"),
+    )
+
+    graph_version: Mapped[str] = mapped_column(
+        ForeignKey(
+            "graph_indexes.graph_version",
+            name="fk_graph_communities_graph_version",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+        nullable=False,
+    )
+    community_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
 
 
 class IngestionRun(Base):
