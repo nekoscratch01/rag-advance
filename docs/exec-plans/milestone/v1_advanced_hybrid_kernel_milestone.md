@@ -300,6 +300,17 @@ eval_runs
 eval_results
 ```
 
+当前 generation observability 也进入 trace：
+
+```text
+query_runs.details_json.llm_io
+answers.payload_json.llm_io
+```
+
+内容覆盖 Answer Generator 的 exact sent request（`model`、`instructions`、`input`、`max_output_tokens`、`reasoning`、`store`）、审计辅助 `request_metadata`（`prompt_version`、`evidence_ids`、`evidence_count`）和 response（`raw_output`、`parsed_answer`、`parsed_confidence`、`usage`）；不保存 API key 或 Authorization header。
+生成失败时记录 `status="failed"`、request/request_metadata、`response=null` 和 `error_message`；未调用 LLM 的路径记录 `status="skipped"` 和 `reason`。
+`request.input` 包含用户 query 和进入 prompt 的 evidence text，生产环境必须按敏感 trace payload 做访问控制、retention、导出和 redaction。
+
 ### 9. Full V1 eval 输出组件级指标
 
 `src/atlas/eval/v1_full.py` 会从 `/v1/query/{id}/trace` 抽取：

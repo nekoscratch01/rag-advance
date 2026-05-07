@@ -10,6 +10,7 @@ from atlas.core.ids import new_id
 from atlas.db import repositories
 from atlas.ingestion.chunker import approx_token_count
 from atlas.llm.base import AnswerGenerator
+from atlas.llm.prompts import ANSWER_INSTRUCTIONS, build_answer_input
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit, serialize_query_plan
 from atlas.query_orchestrator.service import QueryOrchestrator
 from atlas.query_runtime.cache import CACHE_KEY_SCHEMA, QueryCacheStore, make_cache_key
@@ -169,14 +170,15 @@ class QueryRuntime:
                     settings=self.settings,
                     latency_ms=latency_ms,
                 )
-                _attach_query_details(query_run, {})
-                repositories.add_query_trace(db, query_run, [], None)
-                db.commit()
                 details = _runtime_details(
                     query_plan=query_plan,
                     retrieval_tasks=retrieval_tasks,
                     plan_latency_ms=plan_latency_ms,
+                    extra=_llm_io_skipped_details("cache_hit"),
                 )
+                _attach_query_details(query_run, details)
+                repositories.add_query_trace(db, query_run, [], None)
+                db.commit()
                 return QueryResult(query_id, trace_id, answer, confidence, citations, details)
             cache_status = "miss"
 
@@ -231,7 +233,13 @@ class QueryRuntime:
                 latency_ms=latency_ms,
                 error_message=exc.error_message,
             )
-            _attach_query_details(query_run, {})
+            details = _runtime_details(
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
+                extra=_llm_io_skipped_details("retrieval_failed"),
+            )
+            _attach_query_details(query_run, details)
             repositories.add_query_trace(db, query_run, retrieval_events, None)
             db.commit()
             exc.trace_id = trace_id
@@ -276,7 +284,13 @@ class QueryRuntime:
                 latency_ms=latency_ms,
                 error_message=atlas_error.error_message,
             )
-            _attach_query_details(query_run, {})
+            details = _runtime_details(
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+                plan_latency_ms=plan_latency_ms,
+                extra=_llm_io_skipped_details("retrieval_failed"),
+            )
+            _attach_query_details(query_run, details)
             repositories.add_query_trace(db, query_run, retrieval_events, None)
             db.commit()
             raise atlas_error from exc
@@ -295,6 +309,7 @@ class QueryRuntime:
                     **_critic_details(pre_critic=pre_critic, post_critic=None),
                     **_retrieval_trace_details([]),
                     **empty_pack_details,
+                    **_llm_io_skipped_details("no_evidence"),
                 },
             )
             _record_trace_metadata(
@@ -361,6 +376,9 @@ class QueryRuntime:
                     **_critic_details(pre_critic=pre_critic, post_critic=None),
                     **_retrieval_trace_details(generation_evidence),
                     **_provider_router_details(router_result),
+                    **_llm_io_skipped_details(
+                        f"pre_generation_critic_{pre_critic.status}"
+                    ),
                 },
             )
             _record_trace_metadata(
@@ -396,6 +414,15 @@ class QueryRuntime:
             db.commit()
             return QueryResult(query_id, trace_id, answer, confidence, citations, details)
 
+        llm_io_request = _llm_io_request(
+            settings=self.settings,
+            query=normalized_query,
+            evidence=generation_evidence,
+        )
+        llm_io_request_metadata = _llm_io_request_metadata(
+            settings=self.settings,
+            evidence=generation_evidence,
+        )
         try:
             generated = self.generator.generate(
                 query=normalized_query,
@@ -422,6 +449,11 @@ class QueryRuntime:
                     **_critic_details(pre_critic=pre_critic, post_critic=post_critic),
                     **_retrieval_trace_details(generation_evidence),
                     **_provider_router_details(router_result),
+                    **_llm_io_completed_details(
+                        request=llm_io_request,
+                        request_metadata=llm_io_request_metadata,
+                        generated=generated,
+                    ),
                 },
             )
             confidence = _critic_confidence(
@@ -540,6 +572,11 @@ class QueryRuntime:
                     **_critic_details(pre_critic=pre_critic, post_critic=None),
                     **_retrieval_trace_details(generation_evidence),
                     **_provider_router_details(router_result),
+                    **_llm_io_failed_details(
+                        request=llm_io_request,
+                        request_metadata=llm_io_request_metadata,
+                        error_message=exc.error_message,
+                    ),
                 },
             )
             _attach_query_details(query_run, details)
@@ -751,6 +788,85 @@ def _provider_router_details(router_result: ProviderRouterResult | None) -> dict
             details["evidence_pack"] = _evidence_pack_summary(result.evidence_pack)
             break
     return details
+
+
+def _llm_io_request(
+    *,
+    settings: Settings,
+    query: str,
+    evidence: list[Evidence],
+) -> dict[str, Any]:
+    return {
+        "model": settings.llm_model,
+        "instructions": ANSWER_INSTRUCTIONS,
+        "input": build_answer_input(query=query, evidence=evidence),
+        "max_output_tokens": settings.llm_max_output_tokens,
+        "reasoning": {"effort": settings.llm_reasoning_effort},
+        "store": False,
+    }
+
+
+def _llm_io_request_metadata(
+    *,
+    settings: Settings,
+    evidence: list[Evidence],
+) -> dict[str, Any]:
+    return {
+        "prompt_version": settings.prompt_version,
+        "evidence_ids": [item.evidence_id for item in evidence],
+        "evidence_count": len(evidence),
+    }
+
+
+def _llm_io_completed_details(
+    *,
+    request: dict[str, Any],
+    request_metadata: dict[str, Any],
+    generated: object,
+) -> dict[str, Any]:
+    usage = getattr(generated, "usage", None)
+    return {
+        "llm_io": {
+            "status": "completed",
+            "request": request,
+            "request_metadata": request_metadata,
+            "response": {
+                "raw_output": getattr(generated, "raw_output", None),
+                "parsed_answer": getattr(generated, "answer", None),
+                "parsed_confidence": getattr(generated, "confidence", None),
+                "usage": {
+                    "input_tokens": getattr(usage, "input_tokens", None),
+                    "output_tokens": getattr(usage, "output_tokens", None),
+                },
+            },
+        }
+    }
+
+
+def _llm_io_failed_details(
+    *,
+    request: dict[str, Any],
+    request_metadata: dict[str, Any],
+    error_message: str,
+) -> dict[str, Any]:
+    return {
+        "llm_io": {
+            "status": "failed",
+            "request": request,
+            "request_metadata": request_metadata,
+            "response": None,
+            "error_message": error_message,
+        }
+    }
+
+
+def _llm_io_skipped_details(reason: str) -> dict[str, Any]:
+    return {
+        "llm_io": {
+            "status": "skipped",
+            "reason": reason,
+        }
+    }
 
 
 def _evidence_pack_summary(pack: object) -> dict[str, Any]:

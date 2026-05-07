@@ -201,18 +201,21 @@ def record_v1_trace_family(
             )
         )
 
+    answer_payload = {
+        "answer": query_run.answer,
+        "confidence": query_run.confidence,
+        "model_name": query_run.model_name,
+        "prompt_version": query_run.prompt_version,
+        "generation_event": _generation_event_payload(generation_event),
+    }
+    if isinstance(details.get("llm_io"), dict):
+        answer_payload["llm_io"] = dict(details["llm_io"])
     db.add(
         AnswerRecord(
             record_id=new_id("ans"),
             query_id=query_run.query_id,
             confidence=query_run.confidence,
-            payload_json={
-                "answer": query_run.answer,
-                "confidence": query_run.confidence,
-                "model_name": query_run.model_name,
-                "prompt_version": query_run.prompt_version,
-                "generation_event": _generation_event_payload(generation_event),
-            },
+            payload_json=answer_payload,
         )
     )
     for citation in _list_mapping(query_run.citations_json):

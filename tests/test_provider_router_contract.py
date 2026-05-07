@@ -1,3 +1,6 @@
+import json
+from types import SimpleNamespace
+
 import pytest
 
 from atlas.api import dependencies as dependency_module
@@ -7,6 +10,11 @@ from atlas.core.config import (
     executable_query_providers,
 )
 from atlas.core.errors import AtlasError, ErrorCode
+from atlas.db.models import GenerationEvent, QueryCache, QueryRun
+from atlas.db.repositories import record_v1_trace_family
+from atlas.llm.base import GeneratedAnswer, LLMUsage
+from atlas.llm.clients import LLMResponse
+from atlas.llm.openai_client import OpenAIAnswerGenerator
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
 from atlas.query_runtime.citation_builder import build_citations
 from atlas.query_runtime.service import (
@@ -21,7 +29,6 @@ from atlas.retrieval.models.evidence import Evidence
 from atlas.retrieval.models.retrieval_task import tasks_from_plan
 from atlas.retrieval.providers.graph import GraphProvider, PostgresGraphStore
 from atlas.retrieval.router import ProviderRouter, serialize_provider_result
-from atlas.llm.base import GeneratedAnswer, LLMUsage
 
 
 class _HybridProvider:
@@ -238,6 +245,76 @@ class _DB:
 
     def commit(self) -> None:
         self.commits += 1
+
+
+class _CacheHitDB(_DB):
+    def __init__(self, record: QueryCache) -> None:
+        super().__init__()
+        self.record = record
+        self.cache_gets = []
+
+    def get(self, model, key):
+        if model is QueryCache:
+            self.cache_gets.append(key)
+            return self.record
+        return None
+
+
+class _FailingProvider:
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+
+    def retrieve_provider_result(
+        self,
+        db,
+        *,
+        query,
+        top_k,
+        filters,
+        options,
+        query_plan,
+        retrieval_tasks,
+    ):
+        raise self.exc
+
+
+class _RecordingLLMClient:
+    def __init__(self, *, output_text: str, input_tokens: int, output_tokens: int) -> None:
+        self.output_text = output_text
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.requests = []
+
+    def create_response(self, request):
+        self.requests.append(dict(request))
+        return LLMResponse(
+            output_text=self.output_text,
+            raw={"request_index": len(self.requests)},
+            usage=SimpleNamespace(
+                input_tokens=self.input_tokens,
+                output_tokens=self.output_tokens,
+            ),
+        )
+
+
+def _json_blob(value) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, sort_keys=True)
+
+
+def _nested_keys(value) -> set[str]:
+    if isinstance(value, dict):
+        keys = {str(key).lower() for key in value}
+        for item in value.values():
+            keys.update(_nested_keys(item))
+        return keys
+    if isinstance(value, list | tuple):
+        keys: set[str] = set()
+        for item in value:
+            keys.update(_nested_keys(item))
+        return keys
+    return set()
 
 
 def test_provider_router_executes_registered_hybrid_and_skips_sql() -> None:
@@ -829,6 +906,224 @@ def test_runtime_does_not_backfill_pure_sql_plan_as_hybrid() -> None:
     assert result.details["retrieval_trace"]["evidence_count"] == 0
 
 
+def test_runtime_marks_llm_io_skipped_on_cache_hit() -> None:
+    plan = QueryPlan(
+        plan_id="plan_cache_hit",
+        original_query="Explain cached supplier risk.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="cached supplier risk",
+                provider="hybrid",
+            ),
+        ),
+    )
+    cache_record = QueryCache(
+        key="cached_key",
+        answer="Cached answer [c1].",
+        confidence="supported",
+        citations_json=[{"citation_id": "c1", "document_id": "doc_1"}],
+        hit_count=0,
+    )
+    db = _CacheHitDB(cache_record)
+    provider = _HybridProvider()
+    runtime = QueryRuntime(
+        settings=Settings(openai_api_key=None, cache_enabled=True),
+        provider_router=ProviderRouter({"hybrid": provider}),
+        generator=_Generator(),
+        orchestrator=_StaticOrchestrator(plan),
+    )
+
+    result = runtime.run(db, query=plan.original_query, top_k=3, filters={}, options={})
+
+    query_run = next(item for item in db.added if item.__tablename__ == "query_runs")
+    llm_io = {"status": "skipped", "reason": "cache_hit"}
+
+    assert db.cache_gets
+    assert provider.calls == []
+    assert result.answer == "Cached answer [c1]."
+    assert result.details["llm_io"] == llm_io
+    assert query_run.details_json["llm_io"] == llm_io
+    assert {"request", "response"}.isdisjoint(result.details["llm_io"])
+
+
+def test_runtime_persists_llm_io_to_query_run_and_answer_record() -> None:
+    raw_output = '{"answer":"Apple discussed supplier disruption risk [c1]."}'
+
+    class _RawOutputGenerator:
+        model_name = "fake-generator"
+
+        def generate(self, *, query, evidence):
+            return GeneratedAnswer(
+                answer="Apple discussed supplier disruption risk [c1].",
+                confidence="supported",
+                usage=LLMUsage(input_tokens=12, output_tokens=7),
+                raw_output=raw_output,
+            )
+
+    plan = QueryPlan(
+        plan_id="plan_hybrid",
+        original_query="Explain Apple supplier disruption risk.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="Apple supplier disruption risk",
+                provider="hybrid",
+            ),
+        ),
+    )
+    db = _DB()
+    runtime = QueryRuntime(
+        settings=Settings(openai_api_key=None, cache_enabled=False),
+        provider_router=ProviderRouter({"hybrid": _HybridProvider()}),
+        generator=_RawOutputGenerator(),
+        orchestrator=_StaticOrchestrator(plan),
+    )
+
+    result = runtime.run(db, query=plan.original_query, top_k=3, filters={}, options={})
+
+    query_run = next(item for item in db.added if item.__tablename__ == "query_runs")
+    answer_record = next(item for item in db.added if item.__tablename__ == "answers")
+    llm_io = result.details["llm_io"]
+    request = llm_io["request"]
+    request_metadata = llm_io["request_metadata"]
+    request_input_blob = _json_blob(request["input"])
+
+    assert query_run.details_json["llm_io"] == llm_io
+    assert answer_record.payload_json["llm_io"] == llm_io
+    assert llm_io["status"] == "completed"
+    assert set(request) == {
+        "model",
+        "instructions",
+        "input",
+        "max_output_tokens",
+        "reasoning",
+        "store",
+    }
+    assert {"prompt_version", "evidence_ids", "evidence_count"}.isdisjoint(request)
+    assert request_metadata == {
+        "prompt_version": runtime.settings.prompt_version,
+        "evidence_ids": ["c1"],
+        "evidence_count": 1,
+    }
+    assert plan.original_query in request_input_blob
+    assert "Apple management discussed supplier disruption risk." in request_input_blob
+    assert "c1" in request_input_blob
+    assert llm_io["response"]["raw_output"] == raw_output
+    assert {"api_key", "authorization", "openai_api_key"}.isdisjoint(_nested_keys(request))
+
+
+def test_runtime_llm_io_request_matches_openai_answer_generator_client_request() -> None:
+    raw_output = json.dumps(
+        {
+            "confidence": "supported",
+            "answer": "Apple discussed supplier disruption risk [c1].",
+        }
+    )
+    fake_client = _RecordingLLMClient(
+        output_text=raw_output,
+        input_tokens=21,
+        output_tokens=9,
+    )
+    settings = Settings(
+        openai_api_key=None,
+        cache_enabled=False,
+        llm_model="fake-openai-model",
+        llm_max_output_tokens=321,
+        llm_reasoning_effort="medium",
+        prompt_version="prompt-test",
+    )
+    plan = QueryPlan(
+        plan_id="plan_openai_generator",
+        original_query="Explain Apple supplier disruption risk.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="Apple supplier disruption risk",
+                provider="hybrid",
+            ),
+        ),
+    )
+    runtime = QueryRuntime(
+        settings=settings,
+        provider_router=ProviderRouter({"hybrid": _HybridProvider()}),
+        generator=OpenAIAnswerGenerator(settings, client=fake_client),
+        orchestrator=_StaticOrchestrator(plan),
+    )
+
+    result = runtime.run(_DB(), query=plan.original_query, top_k=3, filters={}, options={})
+
+    llm_io = result.details["llm_io"]
+
+    assert len(fake_client.requests) == 1
+    assert llm_io["status"] == "completed"
+    assert llm_io["request"] == fake_client.requests[0]
+    assert set(llm_io["request"]) == {
+        "model",
+        "instructions",
+        "input",
+        "max_output_tokens",
+        "reasoning",
+        "store",
+    }
+    assert llm_io["request_metadata"] == {
+        "prompt_version": "prompt-test",
+        "evidence_ids": ["c1"],
+        "evidence_count": 1,
+    }
+    assert llm_io["response"]["parsed_answer"] == (
+        "Apple discussed supplier disruption risk [c1]."
+    )
+    assert llm_io["response"]["parsed_confidence"] == "supported"
+    assert llm_io["response"]["usage"] == {
+        "input_tokens": 21,
+        "output_tokens": 9,
+    }
+
+
+def test_record_v1_trace_family_copies_llm_io_to_answer_payload() -> None:
+    llm_io = {
+        "request": {
+            "input": (
+                "Question: Explain Apple supplier disruption risk.\n"
+                "[c1] Apple management discussed supplier disruption risk."
+            ),
+        },
+        "response": {
+            "raw_output": '{"answer":"Apple discussed supplier disruption risk [c1]."}'
+        },
+    }
+    query_run = QueryRun(
+        query_id="q_llm_io",
+        trace_id="tr_llm_io",
+        user_query="Explain Apple supplier disruption risk.",
+        normalized_query="Explain Apple supplier disruption risk.",
+        answer="Apple discussed supplier disruption risk [c1].",
+        confidence="supported",
+        citations_json=[{"citation_id": "c1", "document_id": "doc_1"}],
+        model_name="fake-generator",
+        prompt_version="test",
+        latency_ms=12,
+        details_json={"llm_io": llm_io},
+    )
+    generation_event = GenerationEvent(
+        event_id="gen_llm_io",
+        query_id="q_llm_io",
+        model_name="fake-generator",
+        prompt_version="test",
+        status="completed",
+    )
+    db = _DB()
+
+    record_v1_trace_family(db, query_run, [], generation_event)
+
+    answer_record = next(item for item in db.added if item.__tablename__ == "answers")
+    assert answer_record.payload_json["llm_io"] == llm_io
+
+
 def test_runtime_persists_provider_trace_when_generation_fails() -> None:
     class _FailingGenerator:
         model_name = "failing-generator"
@@ -871,3 +1166,52 @@ def test_runtime_persists_provider_trace_when_generation_fails() -> None:
     assert query_run.details_json["retrieval_trace"]["evidence_count"] == 1
     assert retrieval_result.payload_json["provider_results"][0]["status"] == "executed"
     assert retrieval_result.payload_json["provider_router_trace"]["status"] == "executed"
+
+
+@pytest.mark.parametrize("failure_kind", ["atlas_error", "generic_error"])
+def test_runtime_marks_llm_io_skipped_when_retrieval_fails(failure_kind: str) -> None:
+    plan = QueryPlan(
+        plan_id="plan_retrieval_failure",
+        original_query="Explain Apple supplier disruption risk.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="Apple supplier disruption risk",
+                provider="hybrid",
+            ),
+        ),
+    )
+    exc = (
+        AtlasError(
+            ErrorCode.UPSTREAM_VECTOR_STORE_UNAVAILABLE,
+            "Vector store failed.",
+            status_code=502,
+        )
+        if failure_kind == "atlas_error"
+        else RuntimeError("vector store failed")
+    )
+    db = _DB()
+    runtime = QueryRuntime(
+        settings=Settings(openai_api_key=None, cache_enabled=False),
+        provider_router=ProviderRouter({"hybrid": _FailingProvider(exc)}),
+        generator=_Generator(),
+        orchestrator=_StaticOrchestrator(plan),
+    )
+
+    with pytest.raises(AtlasError) as raised:
+        runtime.run(db, query=plan.original_query, top_k=3, filters={}, options={})
+
+    query_run = next(item for item in db.added if item.__tablename__ == "query_runs")
+    llm_io = {"status": "skipped", "reason": "retrieval_failed"}
+
+    assert query_run.details_json["llm_io"] == llm_io
+    assert {"request", "response"}.isdisjoint(query_run.details_json["llm_io"])
+    stages = {
+        stage["name"]: stage["status"]
+        for stage in query_run.details_json["trace"]["stages"]
+    }
+    assert stages["retrieval"] == "failed"
+    assert stages["generation"] == "skipped"
+    if failure_kind == "generic_error":
+        assert raised.value.error_message == "Provider retrieval failed."

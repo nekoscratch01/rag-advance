@@ -792,6 +792,7 @@ V1 trace family：
 
 | 表 | payload 重点 |
 |---|---|
+| `query_runs` | `details_json.llm_io`、query-level stage/details、latency、confidence |
 | `query_plans` | `plan_id`、`planner`、`known_providers`、`executable_providers`、`retrieval_units`、`metadata_filter` |
 | `retrieval_tasks` | `task_id`、`unit_id`、`provider`、`query_text`、`metadata_filter`、`provider_status`、`internal_lanes` |
 | `retrieval_results` | `provider_router_trace`、`provider_results`、`retrieval_trace`、stage status、retrieval events |
@@ -799,13 +800,71 @@ V1 trace family：
 | `evidence_blocks` | selected evidence text、page、coverage、provider metadata |
 | `evidence_packs` | token budget、included/dropped blocks、drop reason |
 | `evidence_evaluations` | pre-generation status、warnings、coverage |
-| `answers` | answer、confidence、model、prompt_version、generation event |
+| `answers` | answer、confidence、model、prompt_version、generation event、`payload_json.llm_io` |
 | `citations` | citation id、evidence id、doc/page metadata |
 | `citation_verifications` | post-generation status、warnings、unsupported reasons |
+
+### 12.1 Generation LLM I/O observability
+
+V1 `/v1/query` 和 V3.0 graph opt-in runtime 共用 QueryRuntime 生成链路。生成答案时，Answer Generator 的 LLM I/O 会写入：
+
+```text
+query_runs.details_json.llm_io
+answers.payload_json.llm_io
+```
+
+`llm_io` 是 generation observability payload，不是 secret store。内容边界：
+
+```text
+request:
+  model
+  instructions
+  input
+  max_output_tokens
+  reasoning
+  store
+
+request_metadata:
+  prompt_version
+  evidence_ids
+  evidence_count
+
+response:
+  raw_output
+  parsed_answer
+  parsed_confidence
+  usage
+
+failed:
+  status = "failed"
+  request
+  request_metadata
+  response = null
+  error_message
+
+skipped:
+  status = "skipped"
+  reason
+```
+
+其中 `request` 是 Answer Generator 实际传给 `client.create_response(...)` 的 exact sent request，只包含 `model`、`instructions`、`input`、`max_output_tokens`、`reasoning`、`store`。`request_metadata` 是审计辅助 metadata，用来记录 `prompt_version`、本次生成使用的 `evidence_ids` 和 `evidence_count`，不属于发送给 LLM 的请求。`response` 字段按当前代码保存 `raw_output`、`parsed_answer`、`parsed_confidence` 和 `usage`。
+生成失败时 `llm_io.status="failed"`，保留 request/request_metadata、`response=null` 和 `error_message`。没有调用 LLM 的路径使用 `llm_io.status="skipped"` 和 `reason`，例如 cache hit、retrieval failure、no evidence 或 pre-generation critic 拦截。
+
+安全边界：
+
+```text
+不保存 API key。
+不保存 Authorization header。
+不保存 transport-level secret。
+```
+
+`request.input` 会持久化用户 query 和进入 prompt 的 evidence text；这属于可观察性取证数据，不应当按普通非敏日志处理。生产环境需要在 trace API 权限、retention、导出和 redaction 策略里显式覆盖这一类 payload。
 
 重要 nested payload：
 
 ```text
+query_runs.details_json.llm_io
+answers.payload_json.llm_io
 result.details.query_plan
 result.details.retrieval_tasks
 result.details.provider_router_trace
@@ -978,7 +1037,7 @@ retrieval_units:
 
 | 架构节点 | 模块 | API | DB / payload | Eval |
 |---|---|---|---|---|
-| QueryRuntime | `query_runtime/service.py` | `POST /v1/query` | `query_runs`、`details_json` | total latency、confidence |
+| QueryRuntime | `query_runtime/service.py` | `POST /v1/query` | `query_runs.details_json`、`details_json.llm_io` | total latency、confidence |
 | Query Orchestrator | `query_orchestrator/service.py` | `POST /v1/query/plan` | `query_plans.payload_json` | planner latency、unknown provider rate |
 | LLM Planner | `query_orchestrator/llm_planner.py` | plan API | `planner`、`model` metadata | retry/fallback rate |
 | LLM Client Adapter | `llm/clients/` | planner / answer generator | model usage、raw provider metadata | provider error rate、latency |
@@ -993,6 +1052,7 @@ retrieval_units:
 | Fusion | `retrieval/ranking/fusion.py` | retrieve/query | `fusion`、`lane_contributions` | RRF ablation |
 | Reranker | `retrieval/ranking/reranker.py` | retrieve/query | rerank rank/score/model | reranker lift |
 | Evidence Builder | `query_runtime/evidence_builder.py` | query | `evidence_blocks`、`evidence_packs` | evidence doc/page hit |
+| Answer Generator | `query_runtime/service.py` | query | `answers.payload_json.llm_io`、generation event | answer metrics、usage |
 | Verifier | `evidence_evaluator.py`、`citation_verifier.py` | query | `evidence_evaluations`、`citation_verifications` | unsupported rate |
 | Cache | `query_runtime/cache.py` | query | `query_cache` | cache hit rate |
 
