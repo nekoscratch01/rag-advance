@@ -109,9 +109,11 @@ def test_relation_types_filter_neighbors_and_relationship_fetch(
     neighborhood = store.get_neighbors(
         db,
         entity_id=data["entities"]["company"],
+        degree_cap=25,
+        relation_types=("affects",),
         filters=GraphFilters(
             graph_version=data["graph_version"],
-            relation_types=("affects",),
+            relation_types=("mentions",),
         ),
     )
     relationships = store.get_relationships(
@@ -265,9 +267,10 @@ def test_find_paths_returns_local_one_and_two_hop_paths(
         db,
         source_entity_id=data["entities"]["company"],
         target_entity_id=data["entities"]["margin"],
+        relation_types=("affects", "part_of", "reports_metric"),
         filters=GraphFilters(
             graph_version=data["graph_version"],
-            relation_types=("affects", "part_of", "reports_metric"),
+            relation_types=("mentions",),
         ),
         max_hops=2,
         max_paths=10,

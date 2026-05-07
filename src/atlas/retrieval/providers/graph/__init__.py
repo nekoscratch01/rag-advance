@@ -35,6 +35,8 @@ from atlas.retrieval.providers.graph.models import (
     UnsupportedGraphMode,
     canonical_graph_relation_types,
 )
+from atlas.retrieval.providers.graph.postgres_store import PostgresGraphStore
+from atlas.retrieval.providers.graph.provider import GraphProvider
 from atlas.retrieval.providers.graph.store import GraphStore
 
 __all__ = [
@@ -60,10 +62,12 @@ __all__ = [
     "GraphObjectRef",
     "GraphObjectType",
     "GraphPath",
+    "GraphProvider",
     "GraphRelationship",
     "GraphRelationshipRef",
     "GraphStore",
     "NoOpGraphCache",
+    "PostgresGraphStore",
     "SourceAnchor",
     "SupportedGraphMode",
     "UnsupportedGraphMode",

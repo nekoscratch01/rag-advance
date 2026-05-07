@@ -87,10 +87,27 @@ def _relationship_anchor_scope(filters: GraphFilters):
     return anchor_scope.exists()
 
 
+def _require_graph_filters(filters: GraphFilters | None) -> GraphFilters:
+    if filters is None:
+        raise ValueError("graph_filters_required")
+    return filters
+
+
+def _effective_relation_types(
+    *,
+    filters: GraphFilters,
+    relation_types: tuple[str, ...] | None,
+) -> tuple[str, ...]:
+    if relation_types is None:
+        return filters.relation_types
+    return _dedupe_preserve_order(relation_types)
+
+
 def _relationship_conditions(
     *,
     filters: GraphFilters,
     entity_id: str | None = None,
+    relation_types: tuple[str, ...] | None = None,
 ) -> list[Any]:
     conditions: list[Any] = [GraphRelationshipRecord.graph_version == filters.graph_version]
     if entity_id is not None:
@@ -100,8 +117,12 @@ def _relationship_conditions(
                 GraphRelationshipRecord.target_entity_id == entity_id,
             )
         )
-    if filters.relation_types:
-        conditions.append(GraphRelationshipRecord.relation_type.in_(filters.relation_types))
+    effective_relation_types = _effective_relation_types(
+        filters=filters,
+        relation_types=relation_types,
+    )
+    if effective_relation_types:
+        conditions.append(GraphRelationshipRecord.relation_type.in_(effective_relation_types))
     if filters.document_ids or filters.chunk_ids:
         conditions.append(_relationship_anchor_scope(filters))
     return conditions
@@ -270,15 +291,21 @@ class PostgresGraphStore:
         db: Session,
         *,
         entity_id: str,
-        filters: GraphFilters,
         degree_cap: int = 25,
+        relation_types: tuple[str, ...] | None = None,
+        filters: GraphFilters | None = None,
     ) -> GraphNeighborhood:
+        filters = _require_graph_filters(filters)
         center = self.get_entity(db, entity_id, graph_version=filters.graph_version)
         if center is None:
             raise ValueError(f"graph_entity_not_found:{filters.graph_version}:{entity_id}")
 
         cap = max(0, degree_cap)
-        conditions = _relationship_conditions(filters=filters, entity_id=entity_id)
+        conditions = _relationship_conditions(
+            filters=filters,
+            entity_id=entity_id,
+            relation_types=relation_types,
+        )
         if filters.entity_types:
             source_type_match = (
                 select(GraphEntityRecord.entity_id)
@@ -379,11 +406,13 @@ class PostgresGraphStore:
         *,
         source_entity_id: str,
         target_entity_id: str,
-        filters: GraphFilters,
         max_hops: int = 2,
-        max_paths: int = 20,
         degree_cap: int = 25,
+        relation_types: tuple[str, ...] | None = None,
+        filters: GraphFilters | None = None,
+        max_paths: int = 20,
     ) -> tuple[GraphPath, ...]:
+        filters = _require_graph_filters(filters)
         if max_hops < 1 or max_paths <= 0 or degree_cap <= 0:
             return ()
 
@@ -400,6 +429,7 @@ class PostgresGraphStore:
             entity_id=source_entity_id,
             filters=filters,
             degree_cap=degree_cap,
+            relation_types=relation_types,
         ):
             mid_entity_id = self._other_entity_id(first_hop, source_entity_id)
             if mid_entity_id is None:
@@ -424,6 +454,7 @@ class PostgresGraphStore:
                 entity_id=mid_entity_id,
                 filters=filters,
                 degree_cap=degree_cap,
+                relation_types=relation_types,
             ):
                 if second_hop.relationship_id == first_hop.relationship_id:
                     continue
@@ -631,8 +662,13 @@ class PostgresGraphStore:
         entity_id: str,
         filters: GraphFilters,
         degree_cap: int,
+        relation_types: tuple[str, ...] | None = None,
     ) -> tuple[GraphRelationshipRecord, ...]:
-        conditions = _relationship_conditions(filters=filters, entity_id=entity_id)
+        conditions = _relationship_conditions(
+            filters=filters,
+            entity_id=entity_id,
+            relation_types=relation_types,
+        )
         return tuple(
             db.execute(
                 select(GraphRelationshipRecord)

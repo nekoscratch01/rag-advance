@@ -48,8 +48,9 @@ class GraphStore(Protocol):
         db: Any,
         *,
         entity_id: str,
-        filters: GraphFilters,
         degree_cap: int = DEFAULT_DEGREE_CAP,
+        relation_types: tuple[str, ...] | None = None,
+        filters: GraphFilters | None = None,
     ) -> GraphNeighborhood:
         """Fetch a neighborhood within filters.graph_version."""
         ...
@@ -60,10 +61,11 @@ class GraphStore(Protocol):
         *,
         source_entity_id: str,
         target_entity_id: str,
-        filters: GraphFilters,
         max_hops: int = DEFAULT_MAX_HOPS,
-        max_paths: int = DEFAULT_MAX_PATHS,
         degree_cap: int = DEFAULT_DEGREE_CAP,
+        relation_types: tuple[str, ...] | None = None,
+        filters: GraphFilters | None = None,
+        max_paths: int = DEFAULT_MAX_PATHS,
     ) -> tuple[GraphPath, ...]:
         """Find paths within filters.graph_version."""
         ...
