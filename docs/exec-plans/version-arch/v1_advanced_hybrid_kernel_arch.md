@@ -817,6 +817,12 @@ v1_trace.candidates[].payload.metadata.fusion
 v1_trace.candidates[].payload.metadata.lane_attributions
 ```
 
+Multi-provider opt-in 时，`ProviderRouter` 会在 provider evidence 合并边界把最终进入
+runtime 的 evidence 统一重编号为全局 `c1..cN`。provider 内部的局部 evidence id /
+rank 不改写，而是投影到 `retrieval_trace.top_k[]` 的
+`original_evidence_id`、`provider_local_evidence_id`、`provider_local_rank` 和
+`provider_local_provider`，用于把 LLM citation 映射回 provider-local trace。
+
 TODO：
 
 ```text

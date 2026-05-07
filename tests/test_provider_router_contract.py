@@ -8,7 +8,12 @@ from atlas.core.config import (
 )
 from atlas.core.errors import AtlasError, ErrorCode
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
-from atlas.query_runtime.service import QueryRuntime
+from atlas.query_runtime.citation_builder import build_citations
+from atlas.query_runtime.service import (
+    QueryRuntime,
+    _retrieval_trace_details,
+    _runtime_details,
+)
 from atlas.query_runtime.trace_logger import make_retrieval_events
 from atlas.retrieval.contracts import ProviderResult
 from atlas.retrieval.models.candidate import Candidate
@@ -63,6 +68,65 @@ class _HybridProvider:
         )
 
 
+class _TopKRecordingHybridProvider:
+    def __init__(self) -> None:
+        self.top_ks = []
+
+    def retrieve_provider_result(
+        self,
+        db,
+        *,
+        query,
+        top_k,
+        filters,
+        options,
+        query_plan,
+        retrieval_tasks,
+    ):
+        self.top_ks.append(top_k)
+        evidence = (
+            Evidence(
+                evidence_id="c1",
+                document_id="doc_1",
+                chunk_id="chk_1",
+                text="First evidence item.",
+                source_title="Source 1",
+                source_uri=None,
+                section_title="Section",
+                page_start=1,
+                page_end=1,
+                retrieval_score=1.0,
+                rank=1,
+                token_count=3,
+                metadata={"provider": "text_hybrid"},
+            ),
+            Evidence(
+                evidence_id="c2",
+                document_id="doc_2",
+                chunk_id="chk_2",
+                text="Second evidence item.",
+                source_title="Source 2",
+                source_uri=None,
+                section_title="Section",
+                page_start=2,
+                page_end=2,
+                retrieval_score=0.9,
+                rank=2,
+                token_count=3,
+                metadata={"provider": "text_hybrid"},
+            ),
+        )
+        return ProviderResult(
+            provider="hybrid",
+            task_id=retrieval_tasks[0].task_id,
+            unit_id=retrieval_tasks[0].unit_id,
+            status="executed",
+            evidence=evidence,
+            latency_ms=1,
+            trace={"provider": "hybrid", "status": "executed", "top_k": top_k},
+        )
+
+
 class _GraphProvider:
     def __init__(self) -> None:
         self.calls = []
@@ -81,7 +145,7 @@ class _GraphProvider:
         self.calls.append(tuple(task.task_id for task in retrieval_tasks))
         evidence = (
             Evidence(
-                evidence_id="g1",
+                evidence_id="c1",
                 document_id="doc_graph",
                 chunk_id="chk_graph",
                 text="A graph-grounded supplier relationship is supported by this chunk.",
@@ -220,6 +284,53 @@ def test_provider_router_executes_registered_hybrid_and_skips_sql() -> None:
     assert result.trace["status"] == "partial"
 
 
+def test_provider_router_normalizes_top_k_before_provider_call() -> None:
+    plan = QueryPlan(
+        plan_id="plan_negative_top_k",
+        original_query="Find supplier risk evidence.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="supplier disruption risk",
+                provider="hybrid",
+            ),
+        ),
+    )
+    tasks = tasks_from_plan(plan)
+    provider = _TopKRecordingHybridProvider()
+    router = ProviderRouter({"hybrid": provider})
+
+    result = router.retrieve(
+        _DB(),
+        query=plan.original_query,
+        top_k=-1,
+        filters={},
+        options={},
+        query_plan=plan,
+        retrieval_tasks=tasks,
+    )
+
+    assert provider.top_ks == [0]
+    assert len(result.provider_results[0].evidence) == 2
+    assert result.evidence == ()
+
+    positive_provider = _TopKRecordingHybridProvider()
+    positive_router = ProviderRouter({"hybrid": positive_provider})
+    positive_result = positive_router.retrieve(
+        _DB(),
+        query=plan.original_query,
+        top_k=1,
+        filters={},
+        options={},
+        query_plan=plan,
+        retrieval_tasks=tasks,
+    )
+
+    assert positive_provider.top_ks == [1]
+    assert tuple(item.evidence_id for item in positive_result.evidence) == ("c1",)
+
+
 def test_provider_router_respects_task_non_executable_status_even_if_registered() -> None:
     plan = QueryPlan(
         plan_id="plan_sql",
@@ -290,6 +401,196 @@ def test_provider_router_trace_status_empty_when_all_provider_results_empty() ->
     assert result.evidence == ()
     assert [item.status for item in result.provider_results] == ["empty", "empty"]
     assert result.trace["status"] == "empty"
+
+
+def test_provider_router_assigns_global_evidence_ids_before_citation_building() -> None:
+    plan = QueryPlan(
+        plan_id="plan_multi_provider_evidence",
+        original_query="Explain supplier risk with graph context.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="Apple supplier disruption risk",
+                provider="hybrid",
+            ),
+            RetrievalUnit(
+                unit_id="u_graph",
+                purpose="supplier_relationship_graph",
+                text="Apple supplier relationships",
+                provider="graph",
+            ),
+        ),
+    )
+    tasks = tasks_from_plan(plan, executable_providers=("hybrid", "graph"))
+    router = ProviderRouter({"hybrid": _HybridProvider(), "graph": _GraphProvider()})
+
+    result = router.retrieve(
+        _DB(),
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={},
+        query_plan=plan,
+        retrieval_tasks=tasks,
+    )
+
+    assert tuple(item.evidence_id for item in result.evidence) == ("c1", "c2")
+    assert {item.chunk_id for item in result.evidence} == {"chk_1", "chk_graph"}
+    assert {
+        item.metadata["provider_local_provider"] for item in result.evidence
+    } == {"hybrid", "graph"}
+    assert {
+        item.metadata["provider_local_evidence_id"] for item in result.evidence
+    } == {"c1"}
+
+    citations = build_citations(
+        "Text and graph evidence both support this answer [c1] [c2].",
+        list(result.evidence),
+        confidence="supported",
+    )
+
+    assert [item["citation_id"] for item in citations] == ["c1", "c2"]
+    assert {item["chunk_id"] for item in citations} == {"chk_1", "chk_graph"}
+    assert citations[0]["supporting_text"] != citations[1]["supporting_text"]
+
+
+def test_runtime_retrieval_trace_projects_provider_local_evidence_ids() -> None:
+    plan = QueryPlan(
+        plan_id="plan_trace_provider_local_ids",
+        original_query="Explain supplier risk with graph context.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="Apple supplier disruption risk",
+                provider="hybrid",
+            ),
+            RetrievalUnit(
+                unit_id="u_graph",
+                purpose="supplier_relationship_graph",
+                text="Apple supplier relationships",
+                provider="graph",
+            ),
+        ),
+    )
+    tasks = tasks_from_plan(plan, executable_providers=("hybrid", "graph"))
+    router = ProviderRouter({"hybrid": _HybridProvider(), "graph": _GraphProvider()})
+
+    result = router.retrieve(
+        _DB(),
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={},
+        query_plan=plan,
+        retrieval_tasks=tasks,
+    )
+    details = _runtime_details(
+        query_plan=plan,
+        retrieval_tasks=tasks,
+        plan_latency_ms=1,
+        extra=_retrieval_trace_details(list(result.evidence)),
+    )
+
+    trace_items = details["retrieval_trace"]["top_k"]
+    assert [
+        (
+            item["evidence_id"],
+            item["provider_local_provider"],
+            item["provider_local_evidence_id"],
+            item["provider_local_rank"],
+            item["original_evidence_id"],
+        )
+        for item in trace_items
+    ] == [
+        ("c1", "hybrid", "c1", 1, "c1"),
+        ("c2", "graph", "c1", 1, "c1"),
+    ]
+
+
+def test_provider_router_keeps_global_evidence_ids_contiguous_after_top_k() -> None:
+    plan = QueryPlan(
+        plan_id="plan_top_k_truncation",
+        original_query="Explain supplier risk with graph context.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="Apple supplier disruption risk",
+                provider="hybrid",
+            ),
+            RetrievalUnit(
+                unit_id="u_graph",
+                purpose="supplier_relationship_graph",
+                text="Apple supplier relationships",
+                provider="graph",
+            ),
+        ),
+    )
+    tasks = tasks_from_plan(plan, executable_providers=("hybrid", "graph"))
+    router = ProviderRouter({"hybrid": _HybridProvider(), "graph": _GraphProvider()})
+
+    result = router.retrieve(
+        _DB(),
+        query=plan.original_query,
+        top_k=1,
+        filters={},
+        options={},
+        query_plan=plan,
+        retrieval_tasks=tasks,
+    )
+
+    assert sum(len(item.evidence) for item in result.provider_results) == 2
+    assert tuple(item.evidence_id for item in result.evidence) == ("c1",)
+
+    citations = build_citations(
+        "Only retained evidence is cited [c1], while dropped evidence is ignored [c2].",
+        list(result.evidence),
+        confidence="supported",
+    )
+
+    assert [item["citation_id"] for item in citations] == ["c1"]
+    assert [item["chunk_id"] for item in citations] == [result.evidence[0].chunk_id]
+
+
+def test_provider_router_preserves_single_provider_c1_citation_compatibility() -> None:
+    plan = QueryPlan(
+        plan_id="plan_single_provider_evidence",
+        original_query="Explain Apple supplier disruption risk.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="Apple supplier disruption risk",
+                provider="hybrid",
+            ),
+        ),
+    )
+    tasks = tasks_from_plan(plan)
+    router = ProviderRouter({"hybrid": _HybridProvider()})
+
+    result = router.retrieve(
+        _DB(),
+        query=plan.original_query,
+        top_k=3,
+        filters={},
+        options={},
+        query_plan=plan,
+        retrieval_tasks=tasks,
+    )
+
+    assert tuple(item.evidence_id for item in result.evidence) == ("c1",)
+    assert result.evidence[0].metadata["provider_local_evidence_id"] == "c1"
+
+    citations = build_citations(
+        "Supplier disruption risk is supported [c1].",
+        list(result.evidence),
+        confidence="supported",
+    )
+
+    assert [item["citation_id"] for item in citations] == ["c1"]
+    assert [item["chunk_id"] for item in citations] == ["chk_1"]
 
 
 def test_provider_router_rejects_internal_lane_registration() -> None:

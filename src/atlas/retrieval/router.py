@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import time
 from typing import Any, Mapping
 
@@ -59,8 +59,9 @@ class ProviderRouter:
         retrieval_tasks: list[RetrievalTask],
     ) -> ProviderRouterResult:
         started = time.perf_counter()
+        effective_top_k = max(0, top_k)
         provider_results: list[ProviderResult] = []
-        evidence: list[Any] = []
+        evidence: list[tuple[str, Any]] = []
         for provider_name, tasks in _group_tasks(retrieval_tasks).items():
             executable_tasks: list[RetrievalTask] = []
             for task in tasks:
@@ -87,18 +88,19 @@ class ProviderRouter:
                 db,
                 provider_name=provider_name,
                 query=query,
-                top_k=top_k,
+                top_k=effective_top_k,
                 filters=filters,
                 options=options,
                 query_plan=query_plan,
                 retrieval_tasks=executable_tasks,
             )
             provider_results.append(result)
-            evidence.extend(result.evidence)
+            evidence.extend((result.provider, item) for item in result.evidence)
 
         latency_ms = int((time.perf_counter() - started) * 1000)
+        global_evidence = _renumber_global_evidence(evidence[:effective_top_k])
         return ProviderRouterResult(
-            evidence=tuple(evidence[:top_k]),
+            evidence=tuple(global_evidence),
             provider_results=tuple(provider_results),
             trace=_router_trace(
                 query_plan=query_plan,
@@ -108,6 +110,29 @@ class ProviderRouter:
                 executable_providers=self.executable_providers,
             ),
         )
+
+
+def _renumber_global_evidence(items: list[tuple[str, Any]]) -> list[Any]:
+    renumbered: list[Any] = []
+    for global_rank, (provider, item) in enumerate(items, start=1):
+        metadata = dict(getattr(item, "metadata", {}) or {})
+        metadata.update(
+            {
+                "original_evidence_id": getattr(item, "evidence_id", None),
+                "provider_local_evidence_id": getattr(item, "evidence_id", None),
+                "provider_local_rank": getattr(item, "rank", None),
+                "provider_local_provider": provider,
+            }
+        )
+        renumbered.append(
+            replace(
+                item,
+                evidence_id=f"c{global_rank}",
+                rank=global_rank,
+                metadata=metadata,
+            )
+        )
+    return renumbered
 
 
 def _group_tasks(tasks: list[RetrievalTask]) -> dict[str, list[RetrievalTask]]:
@@ -240,6 +265,8 @@ def _execute_provider(
             "legacy_provider_adapter": True,
         },
     )
+
+
 def _router_trace(
     *,
     query_plan: QueryPlan,
