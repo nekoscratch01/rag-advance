@@ -1,6 +1,6 @@
 # V1 里程碑：Atlas Advanced Hybrid Kernel
 
-更新时间：2026-05-06
+更新时间：2026-05-08
 
 ## 版本契约
 
@@ -300,16 +300,24 @@ eval_runs
 eval_results
 ```
 
-当前 generation observability 也进入 trace：
+当前 planner / generation observability 已从旧 raw JSON 旁路收敛到结构化表：
 
 ```text
-query_runs.details_json.llm_io
-answers.payload_json.llm_io
+query_runs.details_json.llm_io -> 轻量 status / answer_llm_call_id / error / reason
+query_runs.details_json.planner_llm -> 轻量 status / planner_llm_call_id / validation status / error
+query_plans.planner_call_id
+answers.answer_call_id
+answers.payload_json.answer_llm_call_id
+llm_calls
+llm_call_evidence
 ```
 
-内容覆盖 Answer Generator 的 exact sent request（`model`、`instructions`、`input`、`max_output_tokens`、`reasoning`、`store`）、审计辅助 `request_metadata`（`prompt_version`、`evidence_ids`、`evidence_count`）和 response（`raw_output`、`parsed_answer`、`parsed_confidence`、`usage`）；不保存 API key 或 Authorization header。
-生成失败时记录 `status="failed"`、request/request_metadata、`response=null` 和 `error_message`；未调用 LLM 的路径记录 `status="skipped"` 和 `reason`。
-`request.input` 包含用户 query 和进入 prompt 的 evidence text，生产环境必须按敏感 trace payload 做访问控制、retention、导出和 redaction。
+`llm_calls` 保存 planner 和 Answer Generator 的 exact sent request、raw output text、parsed payload、usage、latency、hash、retention 和 redaction/encryption status；`llm_call_evidence` 保存进入 answer prompt 的 evidence snapshot 与 hash/retention。未调用 Answer LLM 的路径仍只记录 `status="skipped"` 和 `reason`。
+`query_runs.details_json` / `query_plans.payload_json` 对 planner 只保留轻量 call id / status / fallback reason；fallback plan 标记 `quality_eligible=false`，不冒充 quality run。
+`GET /v1/query/{id}/trace` 默认 redacted `v1_trace.llm_calls` 的 raw request/response/text 字段和 `v1_trace.llm_call_evidence.text_snapshot`；只有显式 `include_raw_llm_io=true`、`X-Atlas-Include-Raw-Llm-Io` header 或 `ATLAS_TRACE_INCLUDE_RAW_LLM_IO_DEFAULT=true` 才返回完整 raw。
+`llm_calls.input_text` / `request_json.input` 与 `llm_call_evidence.text_snapshot` 包含用户 query、planner prompt 或进入 answer prompt 的 evidence text，生产环境必须按敏感 trace payload 做访问控制、retention、导出和 redaction。
+legacy rows created before this migration may still contain old `details_json` / `answers.payload_json` raw LLM payloads；生产或共享环境使用前需要 scrub/backfill。
+包含 trace 的 FinanceBench artifacts 必须按敏感产物处理，导出或共享前需要确认关闭 raw LLM I/O 或完成 scrub。
 
 ### 9. Full V1 eval 输出组件级指标
 
@@ -407,6 +415,7 @@ table-aware metadata 仍是 textual lane，不是结构化 table store
 SQLProvider / financial_facts / cell provenance 推迟到 V4
 GraphProvider 推迟到 V3
 Redis Queue / worker pool 属于 V2 Research Runtime，不属于 V1
+legacy details_json / answers payload raw LLM I/O scrub/backfill migration 尚未实现
 ```
 
 ## 验收命令

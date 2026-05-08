@@ -1,10 +1,15 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from atlas.api.dependencies import get_provider_router, get_query_orchestrator, get_query_runtime
+from atlas.api.dependencies import (
+    get_provider_router,
+    get_query_orchestrator,
+    get_query_runtime,
+    settings_dependency,
+)
 from atlas.core.config import Settings, executable_query_providers
 from atlas.db.repositories import get_chunks_by_ids, get_query_run, get_v1_trace_family
 from atlas.db.session import get_db
@@ -17,6 +22,16 @@ from atlas.retrieval.router import ProviderRouter
 
 router = APIRouter(prefix="/query", tags=["query"])
 retrieve_router = APIRouter(prefix="/retrieve", tags=["retrieval"])
+_REDACTED = "[redacted]"
+_LLM_CALL_RAW_FIELDS = (
+    "request",
+    "response",
+    "instructions_text",
+    "input_text",
+    "raw_output_text",
+    "parsed_answer_text",
+)
+_LLM_CALL_EVIDENCE_RAW_FIELDS = ("text_snapshot",)
 
 
 class QueryRequest(BaseModel):
@@ -140,7 +155,13 @@ def get_query(query_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @router.get("/{query_id}/trace")
-def get_query_trace(query_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_query_trace(
+    query_id: str,
+    include_raw_llm_io: bool = False,
+    x_atlas_include_raw_llm_io: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(settings_dependency),
+) -> dict[str, Any]:
     query_run = get_query_run(db, query_id)
     if query_run is None:
         raise HTTPException(status_code=404, detail="Query run not found")
@@ -156,6 +177,12 @@ def get_query_trace(query_id: str, db: Session = Depends(get_db)) -> dict[str, A
     generation_latency_ms = _generation_latency_ms(generation_events)
     if generation_latency_ms is None:
         generation_latency_ms = _stage_latency(trace_metadata, "generation")
+    raw_llm_io_included = _include_raw_llm_io(
+        include_raw_llm_io,
+        x_atlas_include_raw_llm_io,
+        settings,
+    )
+    v1_trace = get_v1_trace_family(db, query_run.query_id)
 
     return {
         "query": {
@@ -202,7 +229,9 @@ def get_query_trace(query_id: str, db: Session = Depends(get_db)) -> dict[str, A
         "cache": _trace_cache(trace_metadata),
         "stages": _trace_stages(trace_metadata, retrieval_events, generation_events),
         "metadata": _trace_route_metadata(trace_metadata),
-        "v1_trace": get_v1_trace_family(db, query_run.query_id),
+        "v1_trace": (
+            v1_trace if raw_llm_io_included else _redact_v1_trace_llm_io(v1_trace)
+        ),
         "model": {
             "model_name": query_run.model_name,
             "prompt_version": query_run.prompt_version,
@@ -247,6 +276,45 @@ def _serialize_query_run(query_run) -> dict[str, Any]:
             for event in query_run.generation_events
         ],
     }
+
+
+def _include_raw_llm_io(
+    include_raw_llm_io: bool,
+    header_value: str | None,
+    settings: Settings,
+) -> bool:
+    return (
+        include_raw_llm_io
+        or _truthy(header_value)
+        or bool(settings.trace_include_raw_llm_io_default)
+    )
+
+
+def _redact_v1_trace_llm_io(v1_trace: dict[str, Any]) -> dict[str, Any]:
+    redacted = dict(v1_trace)
+    redacted["llm_calls"] = [
+        _redact_fields(item, _LLM_CALL_RAW_FIELDS)
+        for item in _list_of_mappings(v1_trace.get("llm_calls"))
+    ]
+    redacted["llm_call_evidence"] = [
+        _redact_fields(item, _LLM_CALL_EVIDENCE_RAW_FIELDS)
+        for item in _list_of_mappings(v1_trace.get("llm_call_evidence"))
+    ]
+    return redacted
+
+
+def _redact_fields(item: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]:
+    redacted = dict(item)
+    for field in fields:
+        if field in redacted and redacted[field] is not None:
+            redacted[field] = _REDACTED
+    return redacted
+
+
+def _list_of_mappings(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
 
 
 def _runtime_executable_providers(runtime: QueryRuntime) -> tuple[str, ...]:

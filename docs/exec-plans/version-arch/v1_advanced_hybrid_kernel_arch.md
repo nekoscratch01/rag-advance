@@ -1,6 +1,6 @@
 # V1 实际架构：Atlas Advanced Hybrid Kernel
 
-更新时间：2026-05-07
+更新时间：2026-05-08
 
 本文记录当前 V1 runtime 的真实架构。Design 文档说明目标；本文说明已经落地的模块、API、DB trace payload、eval 入口和仍需补齐的 TODO。
 
@@ -763,7 +763,15 @@ Trace API：
 
 ```text
 GET /v1/query/{query_id}/trace
+GET /v1/query/{query_id}/trace?include_raw_llm_io=true
 ```
+
+默认 `include_raw_llm_io=false`。API 返回的 `v1_trace.llm_calls[]` 会 redacted
+`request` / `response` / `instructions_text` / `input_text` /
+`raw_output_text` / `parsed_answer_text`，`v1_trace.llm_call_evidence[]`
+会 redacted `text_snapshot`。只有显式 query parameter、`X-Atlas-Include-Raw-Llm-Io`
+header 或
+`ATLAS_TRACE_INCLUDE_RAW_LLM_IO_DEFAULT=true` 才返回完整 raw LLM I/O。
 
 返回顶层：
 
@@ -792,63 +800,56 @@ V1 trace family：
 
 | 表 | payload 重点 |
 |---|---|
-| `query_runs` | `details_json.llm_io`、query-level stage/details、latency、confidence |
-| `query_plans` | `plan_id`、`planner`、`known_providers`、`executable_providers`、`retrieval_units`、`metadata_filter` |
+| `query_runs` | `details_json.llm_io` / `planner_llm` 轻量状态/指针、query-level stage/details、latency、confidence |
+| `query_plans` | `plan_id`、`planner_call_id`、`planner`、`known_providers`、`executable_providers`、`retrieval_units`、`metadata_filter` |
 | `retrieval_tasks` | `task_id`、`unit_id`、`provider`、`query_text`、`metadata_filter`、`provider_status`、`internal_lanes` |
 | `retrieval_results` | `provider_router_trace`、`provider_results`、`retrieval_trace`、stage status、retrieval events |
 | `candidates` | `chunk_id`、rank、lane trace、fusion trace、reranker trace |
 | `evidence_blocks` | selected evidence text、page、coverage、provider metadata |
 | `evidence_packs` | token budget、included/dropped blocks、drop reason |
 | `evidence_evaluations` | pre-generation status、warnings、coverage |
-| `answers` | answer、confidence、model、prompt_version、generation event、`payload_json.llm_io` |
+| `answers` | answer、confidence、model、prompt_version、generation event、`answer_call_id` |
+| `llm_calls` | planner / answer LLM exact request/response/raw text、usage、latency、hash、retention、governance status |
+| `llm_call_evidence` | answer prompt evidence snapshot、rank、provider、chunk/page、hash、retention |
 | `citations` | citation id、evidence id、doc/page metadata |
 | `citation_verifications` | post-generation status、warnings、unsupported reasons |
 
 ### 12.1 Generation LLM I/O observability
 
-V1 `/v1/query` 和 V3.0 graph opt-in runtime 共用 QueryRuntime 生成链路。生成答案时，Answer Generator 的 LLM I/O 会写入：
+V1 `/v1/query` 和 V3.0 graph opt-in runtime 共用 QueryRuntime 生成链路。生成答案时，Answer Generator 的 LLM I/O 不再写入 `query_runs.details_json` 或 `answers.payload_json` 的 raw JSON 旁路。
 
 ```text
-query_runs.details_json.llm_io
-answers.payload_json.llm_io
+query_runs.details_json.llm_io -> status + answer_llm_call_id/error/reason
+answers.answer_call_id
+answers.payload_json.answer_llm_call_id
+llm_calls
+llm_call_evidence
 ```
 
-`llm_io` 是 generation observability payload，不是 secret store。内容边界：
+`llm_io` 现在只是轻量指针：
 
 ```text
-request:
-  model
-  instructions
-  input
-  max_output_tokens
-  reasoning
-  store
-
-request_metadata:
-  prompt_version
-  evidence_ids
-  evidence_count
-
-response:
-  raw_output
-  parsed_answer
-  parsed_confidence
-  usage
-
-failed:
-  status = "failed"
-  request
-  request_metadata
-  response = null
-  error_message
-
-skipped:
-  status = "skipped"
-  reason
+completed: {"status": "completed", "answer_llm_call_id": "..."}
+failed:    {"status": "failed", "answer_llm_call_id": "...", "error_message": "..."}
+skipped:   {"status": "skipped", "reason": "..."}
 ```
 
-其中 `request` 是 Answer Generator 实际传给 `client.create_response(...)` 的 exact sent request，只包含 `model`、`instructions`、`input`、`max_output_tokens`、`reasoning`、`store`。`request_metadata` 是审计辅助 metadata，用来记录 `prompt_version`、本次生成使用的 `evidence_ids` 和 `evidence_count`，不属于发送给 LLM 的请求。`response` 字段按当前代码保存 `raw_output`、`parsed_answer`、`parsed_confidence` 和 `usage`。
-生成失败时 `llm_io.status="failed"`，保留 request/request_metadata、`response=null` 和 `error_message`。没有调用 LLM 的路径使用 `llm_io.status="skipped"` 和 `reason`，例如 cache hit、retrieval failure、no evidence 或 pre-generation critic 拦截。
+`llm_calls` 保存 Answer Generator 的 exact sent request（`model`、`instructions`、`input`、`max_output_tokens`、`reasoning`、`store`）、raw output text、parsed answer/confidence、usage token、latency、model、prompt_version、reasoning_effort、store、status/error_message、hash、retention_expires_at、redaction/encryption status。
+
+`llm_call_evidence` 保存进入 answer LLM prompt 的 evidence snapshot：rank、provider、chunk_id、document_id、page_start/end、retrieval_score、token_count、text_snapshot、text_hash、retention，并尽量通过 `evidence_block_record_id` 链接 `evidence_blocks`。
+
+AnswerRecord 的 `payload_json` 只保存：
+
+```text
+answer
+confidence
+model
+prompt_version
+generation_event
+answer_llm_call_id
+```
+
+生成失败时仍会创建 answer-stage `llm_calls` 记录，保存 request、error_message 和 prompt evidence；没有调用 LLM 的路径使用 `llm_io.status="skipped"` 和 `reason`，例如 cache hit、retrieval failure、no evidence 或 pre-generation critic 拦截，不创建 answer call。
 
 安全边界：
 
@@ -858,13 +859,33 @@ skipped:
 不保存 transport-level secret。
 ```
 
-`request.input` 会持久化用户 query 和进入 prompt 的 evidence text；这属于可观察性取证数据，不应当按普通非敏日志处理。生产环境需要在 trace API 权限、retention、导出和 redaction 策略里显式覆盖这一类 payload。
+`llm_calls.input_text` / `request_json.input` 和 `llm_call_evidence.text_snapshot` 会持久化用户 query 与进入 prompt 的 evidence text；这属于可观察性取证数据，不应当按普通非敏日志处理。当前 trace API 默认 redacted raw LLM I/O，只在显式 opt-in 时返回完整 raw。生产环境仍需要在 trace API 权限、retention、导出和 redaction 策略里显式覆盖这一类 payload。
+
+旧版本或迁移前写入的 legacy rows 可能仍在 `query_runs.details_json` 或 `answers.payload_json` 中包含旧 raw `llm_io` / planner prompt / answer payload。当前版本没有做 full legacy scrub migration；生产或共享环境使用前需要单独 scrub/backfill。
+
+### 12.2 Planner LLM I/O observability
+
+V1 planner 真实调用 LLM 时，planner-stage I/O 写入同一张结构化表：
+
+```text
+llm_calls(stage="planner")
+query_plans.planner_call_id
+query_runs.details_json.planner_llm -> status + planner_llm_call_id / validation_status / error
+query_plans.payload_json.metadata.planner_llm_call_id
+```
+
+`llm_calls` 保存 planner 的 exact sent request、raw output text、parsed JSON、parsed plan id、usage、latency、attempt index、model、planner_version、validation_status/error、hash、retention、redaction/encryption status。
+
+`query_runs.details_json` 和 `query_plans.payload_json` 不保存 raw planner prompt/response，只保留 `planner_llm_call_id`、planner status、validation status、fallback reason 等轻量字段。LLM validation fallback 或 exception fallback 仍会记录 `status="invalid"` / `status="failed"` 的 planner call；fallback plan 会标记 `quality_eligible=false` 和 `not_quality_reason="planner_fallback_not_quality_run"`。
 
 重要 nested payload：
 
 ```text
 query_runs.details_json.llm_io
-answers.payload_json.llm_io
+query_runs.details_json.planner_llm
+answers.payload_json.answer_llm_call_id
+v1_trace.llm_calls[]
+v1_trace.llm_call_evidence[]
 result.details.query_plan
 result.details.retrieval_tasks
 result.details.provider_router_trace
@@ -886,6 +907,7 @@ TODO：
 
 ```text
 把 metadata_filter -> qdrant_filter 编译结果写入 retrieval_tasks 或 retrieval_results payload。
+补 legacy details_json / answers payload raw LLM I/O scrub/backfill migration。
 ```
 
 ---
@@ -910,6 +932,10 @@ FinanceBench retrieval-only eval 已有报告。
 full V1 generated-answer runner 已有代码入口。
 完整生成式答案可靠性报告仍需单独跑数归档。
 ```
+
+包含 `/v1/query/{id}/trace` 输出的 FinanceBench artifact 必须按敏感产物处理。
+如果 artifact 需要共享或归档到低信任位置，需要先确认 raw LLM I/O 已关闭或完成
+scrub。
 
 V1 eval 应覆盖：
 
@@ -1037,7 +1063,7 @@ retrieval_units:
 
 | 架构节点 | 模块 | API | DB / payload | Eval |
 |---|---|---|---|---|
-| QueryRuntime | `query_runtime/service.py` | `POST /v1/query` | `query_runs.details_json`、`details_json.llm_io` | total latency、confidence |
+| QueryRuntime | `query_runtime/service.py` | `POST /v1/query` | `query_runs.details_json`、轻量 `details_json.llm_io`、`llm_calls` | total latency、confidence |
 | Query Orchestrator | `query_orchestrator/service.py` | `POST /v1/query/plan` | `query_plans.payload_json` | planner latency、unknown provider rate |
 | LLM Planner | `query_orchestrator/llm_planner.py` | plan API | `planner`、`model` metadata | retry/fallback rate |
 | LLM Client Adapter | `llm/clients/` | planner / answer generator | model usage、raw provider metadata | provider error rate、latency |
@@ -1052,7 +1078,7 @@ retrieval_units:
 | Fusion | `retrieval/ranking/fusion.py` | retrieve/query | `fusion`、`lane_contributions` | RRF ablation |
 | Reranker | `retrieval/ranking/reranker.py` | retrieve/query | rerank rank/score/model | reranker lift |
 | Evidence Builder | `query_runtime/evidence_builder.py` | query | `evidence_blocks`、`evidence_packs` | evidence doc/page hit |
-| Answer Generator | `query_runtime/service.py` | query | `answers.payload_json.llm_io`、generation event | answer metrics、usage |
+| Answer Generator | `query_runtime/service.py` | query | `answers.answer_call_id`、`llm_calls`、`llm_call_evidence`、generation event | answer metrics、usage |
 | Verifier | `evidence_evaluator.py`、`citation_verifier.py` | query | `evidence_evaluations`、`citation_verifications` | unsupported rate |
 | Cache | `query_runtime/cache.py` | query | `query_cache` | cache hit rate |
 

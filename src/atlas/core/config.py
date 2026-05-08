@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     cache_enabled: bool = False
     cache_backend: str = "local"
     cache_ttl_seconds: int = 3600
+    trace_include_raw_llm_io_default: bool = False
 
 
 @lru_cache

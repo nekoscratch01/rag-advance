@@ -110,7 +110,7 @@ class QueryRuntime:
             self.settings.max_top_k,
         )
         started = time.perf_counter()
-        query_plan, retrieval_tasks, plan_latency_ms = _plan_query(
+        query_plan, retrieval_tasks, plan_latency_ms, planner_observability = _plan_query(
             self.orchestrator,
             normalized_query,
             runtime_options,
@@ -177,7 +177,13 @@ class QueryRuntime:
                     extra=_llm_io_skipped_details("cache_hit"),
                 )
                 _attach_query_details(query_run, details)
-                repositories.add_query_trace(db, query_run, [], None)
+                repositories.add_query_trace(
+                    db,
+                    query_run,
+                    [],
+                    None,
+                    observability=planner_observability,
+                )
                 db.commit()
                 return QueryResult(query_id, trace_id, answer, confidence, citations, details)
             cache_status = "miss"
@@ -240,7 +246,13 @@ class QueryRuntime:
                 extra=_llm_io_skipped_details("retrieval_failed"),
             )
             _attach_query_details(query_run, details)
-            repositories.add_query_trace(db, query_run, retrieval_events, None)
+            repositories.add_query_trace(
+                db,
+                query_run,
+                retrieval_events,
+                None,
+                observability=planner_observability,
+            )
             db.commit()
             exc.trace_id = trace_id
             raise
@@ -291,7 +303,13 @@ class QueryRuntime:
                 extra=_llm_io_skipped_details("retrieval_failed"),
             )
             _attach_query_details(query_run, details)
-            repositories.add_query_trace(db, query_run, retrieval_events, None)
+            repositories.add_query_trace(
+                db,
+                query_run,
+                retrieval_events,
+                None,
+                observability=planner_observability,
+            )
             db.commit()
             raise atlas_error from exc
 
@@ -341,7 +359,13 @@ class QueryRuntime:
                 latency_ms=latency_ms,
             )
             _attach_query_details(query_run, details)
-            repositories.add_query_trace(db, query_run, retrieval_events, None)
+            repositories.add_query_trace(
+                db,
+                query_run,
+                retrieval_events,
+                None,
+                observability=planner_observability,
+            )
             db.commit()
             return QueryResult(
                 query_id,
@@ -353,7 +377,11 @@ class QueryRuntime:
             )
 
         generation_started = time.perf_counter()
-        generation_evidence = _fit_evidence_to_budget(evidence, self.settings.max_context_tokens)
+        prompt_evidence = _dedupe_prompt_evidence_by_chunk_id(evidence)
+        generation_evidence = _fit_evidence_to_budget(
+            prompt_evidence,
+            self.settings.max_context_tokens,
+        )
         pre_critic = pre_generation_critic(normalized_query, generation_evidence)
         if pre_critic.status in {"insufficient", "contradicted"}:
             latency_ms = int((time.perf_counter() - started) * 1000)
@@ -410,10 +438,17 @@ class QueryRuntime:
                 latency_ms=latency_ms,
             )
             _attach_query_details(query_run, details)
-            repositories.add_query_trace(db, query_run, retrieval_events, None)
+            repositories.add_query_trace(
+                db,
+                query_run,
+                retrieval_events,
+                None,
+                observability=planner_observability,
+            )
             db.commit()
             return QueryResult(query_id, trace_id, answer, confidence, citations, details)
 
+        answer_llm_call_id = new_id("llmc")
         llm_io_request = _llm_io_request(
             settings=self.settings,
             query=normalized_query,
@@ -423,11 +458,13 @@ class QueryRuntime:
             settings=self.settings,
             evidence=generation_evidence,
         )
+        llm_started = time.perf_counter()
         try:
             generated = self.generator.generate(
                 query=normalized_query,
                 evidence=generation_evidence,
             )
+            llm_latency_ms = int((time.perf_counter() - llm_started) * 1000)
             generation_latency_ms = int((time.perf_counter() - generation_started) * 1000)
             citations = build_citations(
                 generated.answer,
@@ -450,9 +487,7 @@ class QueryRuntime:
                     **_retrieval_trace_details(generation_evidence),
                     **_provider_router_details(router_result),
                     **_llm_io_completed_details(
-                        request=llm_io_request,
-                        request_metadata=llm_io_request_metadata,
-                        generated=generated,
+                        answer_llm_call_id=answer_llm_call_id,
                     ),
                 },
             )
@@ -498,7 +533,26 @@ class QueryRuntime:
                 latency_ms=generation_latency_ms,
                 status="completed",
             )
-            repositories.add_query_trace(db, query_run, retrieval_events, generation_event)
+            answer_observability = _answer_llm_observability_payload(
+                call_id=answer_llm_call_id,
+                status="completed",
+                request=llm_io_request,
+                request_metadata=llm_io_request_metadata,
+                generated=generated,
+                evidence=generation_evidence,
+                latency_ms=llm_latency_ms,
+                error_message=None,
+            )
+            repositories.add_query_trace(
+                db,
+                query_run,
+                retrieval_events,
+                generation_event,
+                observability=_merge_observability(
+                    planner_observability,
+                    answer_observability,
+                ),
+            )
             if cache_key is not None and confidence == "supported":
                 QueryCacheStore.set(
                     db,
@@ -526,6 +580,7 @@ class QueryRuntime:
             )
         except AtlasError as exc:
             latency_ms = int((time.perf_counter() - started) * 1000)
+            llm_latency_ms = int((time.perf_counter() - llm_started) * 1000)
             generation_latency_ms = int((time.perf_counter() - generation_started) * 1000)
             _record_trace_metadata(
                 query_id=query_id,
@@ -573,14 +628,32 @@ class QueryRuntime:
                     **_retrieval_trace_details(generation_evidence),
                     **_provider_router_details(router_result),
                     **_llm_io_failed_details(
-                        request=llm_io_request,
-                        request_metadata=llm_io_request_metadata,
+                        answer_llm_call_id=answer_llm_call_id,
                         error_message=exc.error_message,
                     ),
                 },
             )
             _attach_query_details(query_run, details)
-            repositories.add_query_trace(db, query_run, retrieval_events, generation_event)
+            answer_observability = _answer_llm_observability_payload(
+                call_id=answer_llm_call_id,
+                status="failed",
+                request=llm_io_request,
+                request_metadata=llm_io_request_metadata,
+                generated=None,
+                evidence=generation_evidence,
+                latency_ms=llm_latency_ms,
+                error_message=exc.error_message,
+            )
+            repositories.add_query_trace(
+                db,
+                query_run,
+                retrieval_events,
+                generation_event,
+                observability=_merge_observability(
+                    planner_observability,
+                    answer_observability,
+                ),
+            )
             db.commit()
             exc.trace_id = trace_id
             raise
@@ -592,6 +665,151 @@ def _auto_wire_graph_provider(settings: Settings):
     return GraphProvider(
         store=PostgresGraphStore(),
         max_context_tokens=settings.max_context_tokens,
+    )
+
+
+def _dedupe_prompt_evidence_by_chunk_id(evidence: list[Evidence]) -> list[Evidence]:
+    selected: list[Evidence] = []
+    index_by_key: dict[str, int] = {}
+    for item in evidence:
+        key = item.chunk_id or item.evidence_id
+        if key in index_by_key:
+            index = index_by_key[key]
+            selected[index] = _merge_prompt_evidence(selected[index], item, key)
+            continue
+        index_by_key[key] = len(selected)
+        selected.append(_with_prompt_provenance(item, key))
+    return selected
+
+
+def _merge_prompt_evidence(base: Evidence, duplicate: Evidence, key: str) -> Evidence:
+    metadata = dict(base.metadata or {})
+    duplicate_metadata = dict(duplicate.metadata or {})
+    provenance = _dedupe_provenance(
+        [
+            *_prompt_provider_provenance(metadata, base),
+            *_prompt_provider_provenance(duplicate_metadata, duplicate),
+        ]
+    )
+    evidence_ids = _dedupe(
+        [
+            *[str(value) for value in metadata.get("prompt_deduped_evidence_ids") or ()],
+            base.evidence_id,
+            duplicate.evidence_id,
+        ]
+    )
+    provider_names = _prompt_provider_names_from_provenance(provenance)
+    retrieved_by = _dedupe(
+        [
+            *list(base.retrieved_by or ()),
+            *list(duplicate.retrieved_by or ()),
+            *_as_text_list(metadata.get("retrieved_by")),
+            *_as_text_list(duplicate_metadata.get("retrieved_by")),
+            *provider_names,
+        ]
+    )
+    metadata.update(
+        {
+            "prompt_dedupe_key": key,
+            "prompt_deduped": True,
+            "prompt_duplicate_count": int(metadata.get("prompt_duplicate_count") or 0) + 1,
+            "prompt_deduped_evidence_ids": evidence_ids,
+            "prompt_provider_provenance": provenance,
+            "prompt_providers": provider_names,
+            "retrieved_by": retrieved_by,
+        }
+    )
+    return replace(base, metadata=metadata, retrieved_by=tuple(retrieved_by))
+
+
+def _with_prompt_provenance(item: Evidence, key: str) -> Evidence:
+    metadata = dict(item.metadata or {})
+    provenance = _dedupe_provenance(_prompt_provider_provenance(metadata, item))
+    provider_names = _prompt_provider_names_from_provenance(provenance)
+    retrieved_by = _dedupe(
+        [
+            *list(item.retrieved_by or ()),
+            *_as_text_list(metadata.get("retrieved_by")),
+            *provider_names,
+        ]
+    )
+    metadata.update(
+        {
+            "prompt_dedupe_key": key,
+            "prompt_deduped_evidence_ids": [item.evidence_id],
+            "prompt_provider_provenance": provenance,
+            "prompt_providers": provider_names,
+            "retrieved_by": retrieved_by,
+        }
+    )
+    return replace(item, metadata=metadata, retrieved_by=tuple(retrieved_by))
+
+
+def _prompt_provider_provenance(
+    metadata: dict[str, Any],
+    item: Evidence,
+) -> list[dict[str, Any]]:
+    providers = _dedupe(
+        [
+            str(value)
+            for value in (
+                metadata.get("provider"),
+                metadata.get("retrieval_provider"),
+                metadata.get("provider_local_provider"),
+            )
+            if value
+        ]
+    )
+    providers.extend(
+        provider for provider in item.retrieved_by if provider and provider not in providers
+    )
+    providers.extend(
+        provider
+        for provider in _as_text_list(metadata.get("retrieved_by"))
+        if provider and provider not in providers
+    )
+    if not providers:
+        providers = ["unknown"]
+    return [
+        {
+            "provider": provider,
+            "provider_local_provider": metadata.get("provider_local_provider"),
+            "evidence_id": item.evidence_id,
+            "chunk_id": item.chunk_id,
+            "rank": item.rank,
+            "retrieval_score": item.retrieval_score,
+        }
+        for provider in providers
+    ]
+
+
+def _dedupe_provenance(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[Any, ...]] = set()
+    deduped: list[dict[str, Any]] = []
+    for item in items:
+        key = (
+            item.get("provider"),
+            item.get("provider_local_provider"),
+            item.get("evidence_id"),
+            item.get("chunk_id"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(dict(item))
+    return deduped
+
+
+def _prompt_provider_names_from_provenance(
+    provenance: list[dict[str, Any]],
+) -> list[str]:
+    return _dedupe(
+        [
+            str(value)
+            for item in provenance
+            for value in (item.get("provider_local_provider"), item.get("provider"))
+            if value
+        ]
     )
 
 
@@ -818,43 +1036,118 @@ def _llm_io_request_metadata(
     }
 
 
-def _llm_io_completed_details(
+def _answer_llm_observability_payload(
     *,
+    call_id: str,
+    status: str,
     request: dict[str, Any],
     request_metadata: dict[str, Any],
-    generated: object,
+    generated: object | None,
+    evidence: list[Evidence],
+    latency_ms: int | None,
+    error_message: str | None,
 ) -> dict[str, Any]:
     usage = getattr(generated, "usage", None)
+    usage_payload = {
+        "input_tokens": getattr(usage, "input_tokens", None),
+        "output_tokens": getattr(usage, "output_tokens", None),
+    }
+    response = None
+    if generated is not None:
+        response = {
+            "raw_output": getattr(generated, "raw_output", None),
+            "parsed_answer": getattr(generated, "answer", None),
+            "parsed_confidence": getattr(generated, "confidence", None),
+            "usage": usage_payload,
+        }
+    return {
+        "answer_llm_call": {
+            "call_id": call_id,
+            "stage": "answer",
+            "attempt_index": 1,
+            "sequence_index": 100,
+            "status": status,
+            "error_message": error_message,
+            "latency_ms": latency_ms,
+            "model_name": request.get("model"),
+            "prompt_version": request_metadata.get("prompt_version"),
+            "request": dict(request),
+            "request_metadata": dict(request_metadata),
+            "response": response,
+            "usage": usage_payload,
+            "raw_output": response.get("raw_output") if response else None,
+            "parsed_answer": response.get("parsed_answer") if response else None,
+            "parsed_confidence": response.get("parsed_confidence") if response else None,
+        },
+        "answer_prompt_evidence": [
+            _answer_prompt_evidence_payload(item, rank=rank)
+            for rank, item in enumerate(evidence, start=1)
+        ],
+    }
+
+
+def _answer_prompt_evidence_payload(item: Evidence, *, rank: int) -> dict[str, Any]:
+    metadata = dict(item.metadata or {})
+    providers = metadata.get("prompt_providers")
+    if not isinstance(providers, list):
+        providers = _prompt_provider_names_from_provenance(
+            _prompt_provider_provenance(metadata, item)
+        )
+    return {
+        "evidence_id": item.evidence_id,
+        "rank": rank,
+        "provider": ",".join(str(provider) for provider in providers if provider) or None,
+        "chunk_id": item.chunk_id,
+        "document_id": item.document_id,
+        "page_start": item.page_start,
+        "page_end": item.page_end,
+        "retrieval_score": item.retrieval_score,
+        "token_count": item.token_count,
+        "text_snapshot": item.text,
+        "metadata": {
+            "prompt_dedupe_key": metadata.get("prompt_dedupe_key"),
+            "prompt_deduped": metadata.get("prompt_deduped"),
+            "prompt_duplicate_count": metadata.get("prompt_duplicate_count"),
+            "prompt_deduped_evidence_ids": metadata.get("prompt_deduped_evidence_ids"),
+            "prompt_provider_provenance": metadata.get("prompt_provider_provenance"),
+            "prompt_providers": metadata.get("prompt_providers"),
+        },
+    }
+
+
+def _merge_observability(*items: dict[str, Any] | None) -> dict[str, Any] | None:
+    merged: dict[str, Any] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        for key, value in item.items():
+            if value in (None, {}, []):
+                continue
+            merged[key] = value
+    return merged or None
+
+
+def _llm_io_completed_details(
+    *,
+    answer_llm_call_id: str,
+) -> dict[str, Any]:
     return {
         "llm_io": {
             "status": "completed",
-            "request": request,
-            "request_metadata": request_metadata,
-            "response": {
-                "raw_output": getattr(generated, "raw_output", None),
-                "parsed_answer": getattr(generated, "answer", None),
-                "parsed_confidence": getattr(generated, "confidence", None),
-                "usage": {
-                    "input_tokens": getattr(usage, "input_tokens", None),
-                    "output_tokens": getattr(usage, "output_tokens", None),
-                },
-            },
+            "answer_llm_call_id": answer_llm_call_id,
         }
     }
 
 
 def _llm_io_failed_details(
     *,
-    request: dict[str, Any],
-    request_metadata: dict[str, Any],
+    answer_llm_call_id: str,
     error_message: str,
 ) -> dict[str, Any]:
     return {
         "llm_io": {
             "status": "failed",
-            "request": request,
-            "request_metadata": request_metadata,
-            "response": None,
+            "answer_llm_call_id": answer_llm_call_id,
             "error_message": error_message,
         }
     }
@@ -952,6 +1245,12 @@ def _evidence_trace_item(item: Evidence) -> dict[str, Any]:
         "coverage": metadata.get("coverage"),
         "included_in_prompt": metadata.get("included_in_prompt"),
         "drop_reason": metadata.get("drop_reason"),
+        "prompt_dedupe_key": metadata.get("prompt_dedupe_key"),
+        "prompt_deduped": metadata.get("prompt_deduped"),
+        "prompt_duplicate_count": metadata.get("prompt_duplicate_count"),
+        "prompt_deduped_evidence_ids": metadata.get("prompt_deduped_evidence_ids"),
+        "prompt_provider_provenance": metadata.get("prompt_provider_provenance"),
+        "prompt_providers": metadata.get("prompt_providers"),
     }
 
 
@@ -997,6 +1296,17 @@ def _dedupe(values: list[str]) -> list[str]:
         seen.add(value)
         deduped.append(value)
     return deduped
+
+
+def _as_text_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value else []
+    try:
+        return [str(item) for item in value if item]
+    except TypeError:
+        return [str(value)] if value else []
 
 
 def _cache_key(
@@ -1090,14 +1400,24 @@ def _plan_query(
     query: str,
     options: dict[str, Any],
     executable_providers: tuple[str, ...],
-) -> tuple[QueryPlan | None, list[RetrievalTask], int | None]:
+) -> tuple[QueryPlan | None, list[RetrievalTask], int | None, dict[str, Any] | None]:
     if orchestrator is None or _truthy(options.get("disable_query_plan")):
-        return None, [], None
+        return None, [], None, None
     use_llm = not _truthy(options.get("query_plan_fallback_only"))
     started = time.perf_counter()
-    plan = orchestrator.plan(query, use_llm=use_llm)
+    plan_with_observability = getattr(orchestrator, "plan_with_observability", None)
+    if callable(plan_with_observability):
+        plan, planner_observability = plan_with_observability(query, use_llm=use_llm)
+    else:
+        plan = orchestrator.plan(query, use_llm=use_llm)
+        planner_observability = getattr(orchestrator, "last_observability", None)
     latency_ms = int((time.perf_counter() - started) * 1000)
-    return plan, tasks_from_plan(plan, executable_providers=executable_providers), latency_ms
+    return (
+        plan,
+        tasks_from_plan(plan, executable_providers=executable_providers),
+        latency_ms,
+        planner_observability if isinstance(planner_observability, dict) else None,
+    )
 
 
 def _int_option(options: dict[str, Any], name: str) -> int | None:

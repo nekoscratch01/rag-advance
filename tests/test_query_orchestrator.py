@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from pydantic import SecretStr
 
@@ -387,6 +388,70 @@ def test_llm_planner_retries_with_validation_feedback(monkeypatch) -> None:
     assert "filters is not supported" in calls[1]["input"]
 
 
+def test_llm_planner_observability_captures_request_response_usage() -> None:
+    payload = {
+        "standalone_query": "What was 3M revenue in FY2018?",
+        "query_type": "fact_lookup",
+        "entities": [],
+        "periods": [],
+        "metrics": [],
+        "metadata_filter": {},
+        "retrieval_units": [
+            {
+                "unit_id": "u0",
+                "purpose": "original",
+                "text": "What was 3M revenue in FY2018?",
+                "provider": "hybrid",
+                "metadata_filter": {},
+                "must_have_terms": [],
+                "should_terms": [],
+                "top_k": 10,
+                "weight": 1.0,
+            }
+        ],
+    }
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.requests = []
+
+        def create_response(self, request):
+            self.requests.append(request)
+            return LLMResponse(
+                output_text=json.dumps(payload),
+                raw=SimpleNamespace(output_text=json.dumps(payload)),
+                usage=SimpleNamespace(input_tokens=17, output_tokens=11),
+            )
+
+    fake_client = _FakeClient()
+    settings = Settings(
+        openai_api_key=SecretStr("test-key"),
+        finance_metric_ontology_path=str(ONTOLOGY_PATH),
+    )
+    ontology = FinanceMetricOntology.load(ONTOLOGY_PATH)
+    planner = LLMQueryPlanner(settings=settings, ontology=ontology, client=fake_client)
+
+    plan, observability = planner.plan_with_observability(
+        "What was 3M revenue in FY2018?"
+    )
+
+    call = observability["planner_llm_calls"][0]
+    assert call["request"] == fake_client.requests[0]
+    assert call["response"]["raw_output"] == json.dumps(payload)
+    assert call["response"]["parsed_json"] == payload
+    assert call["usage"] == {"input_tokens": 17, "output_tokens": 11}
+    assert call["attempt_index"] == 1
+    assert call["model_name"] == settings.query_planner_model
+    assert call["planner_version"] == settings.query_planner_version
+    assert call["status"] == "completed"
+    assert call["validation_status"] == "validated"
+    assert call["parsed_plan_id"] == plan.plan_id
+    assert call["latency_ms"] >= 0
+    assert plan.metadata["planner_llm_call_id"] == call["call_id"]
+    assert plan.metadata["planner_llm_status"] == "completed"
+    assert planner.last_observability["planner_llm_call"]["call_id"] == call["call_id"]
+
+
 def test_llm_planner_rejects_legacy_compound_retrievers_raw_payload() -> None:
     settings = Settings(
         openai_api_key=SecretStr("test-key"),
@@ -495,4 +560,6 @@ def test_orchestrator_falls_back_when_llm_plan_fails_validation() -> None:
     assert plan.planner == "rule_based_fallback"
     assert plan.validation_status == "validated"
     assert plan.metadata["fallback_reason"] == "llm_validation_failed"
+    assert plan.metadata["quality_eligible"] is False
+    assert plan.metadata["not_quality_reason"] == "planner_fallback_not_quality_run"
     assert "ungrounded_entity:Imaginary Corp" in plan.metadata["llm_rejection"]["reasons"]

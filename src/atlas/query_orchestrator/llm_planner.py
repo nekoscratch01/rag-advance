@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import re
+import time
 from typing import Any
 
 from pydantic import ValidationError
@@ -39,11 +41,25 @@ class LLMQueryPlanner:
         self.settings = settings
         self.ontology = ontology
         self.client = client
+        self.last_observability: dict[str, Any] = {}
 
     def available(self) -> bool:
         return self.client is not None or self.settings.openai_api_key is not None
 
     def plan(self, query: str, *, validation_feedback: str | None = None) -> QueryPlan:
+        plan, _observability = self.plan_with_observability(
+            query,
+            validation_feedback=validation_feedback,
+        )
+        return plan
+
+    def plan_with_observability(
+        self,
+        query: str,
+        *,
+        validation_feedback: str | None = None,
+    ) -> tuple[QueryPlan, dict[str, Any]]:
+        self.last_observability = {}
         if self.client is None and self.settings.openai_api_key is None:
             raise RuntimeError("OPENAI_API_KEY is required for LLM query planning.")
 
@@ -51,23 +67,50 @@ class LLMQueryPlanner:
         feedback = validation_feedback
         last_error: Exception | None = None
         attempts = _planner_attempt_count(self.settings)
+        planner_calls: list[dict[str, Any]] = []
         validator = QueryPlanValidator(
             self.ontology,
             known_providers=_known_provider_names(self.settings),
         )
-        for _attempt in range(attempts):
-            raw = self._request_plan(client, query, validation_feedback=feedback)
+        for attempt_index in range(1, attempts + 1):
+            try:
+                raw, planner_call, request_error = self._request_plan(
+                    client,
+                    query,
+                    validation_feedback=feedback,
+                    attempt_index=attempt_index,
+                )
+            except _PlannerCallFailed as exc:
+                planner_calls.append(exc.call)
+                self.last_observability = _planner_observability_payload(planner_calls)
+                raise exc.cause from exc
+            planner_calls.append(planner_call)
+            if request_error is not None:
+                last_error = request_error
+                feedback = _exception_feedback(request_error)
+                self.last_observability = _planner_observability_payload(planner_calls)
+                continue
             try:
                 candidate = self._plan_from_raw(query, raw)
             except (ValueError, ValidationError) as exc:
                 last_error = exc
+                _mark_planner_call_invalid(planner_call, error_message=_exception_feedback(exc))
                 feedback = _exception_feedback(exc)
+                self.last_observability = _planner_observability_payload(planner_calls)
                 continue
             validation = validator.validate(candidate)
             if validation.ok:
-                return candidate
+                _mark_planner_call_validated(planner_call, candidate)
+                candidate = _with_planner_call_metadata(
+                    candidate.model_copy(update={"validation_status": "validated"}),
+                    planner_call,
+                )
+                self.last_observability = _planner_observability_payload(planner_calls)
+                return candidate, self.last_observability
             feedback = _validation_feedback(validation.reasons, validation.warnings)
             last_error = ValueError(feedback)
+            _mark_planner_call_invalid(planner_call, error_message=feedback)
+            self.last_observability = _planner_observability_payload(planner_calls)
 
         if last_error is not None:
             raise ValueError(
@@ -81,7 +124,8 @@ class LLMQueryPlanner:
         query: str,
         *,
         validation_feedback: str | None = None,
-    ) -> dict[str, Any]:
+        attempt_index: int,
+    ) -> tuple[dict[str, Any], dict[str, Any], Exception | None]:
         known_providers = _known_provider_names(self.settings)
         executable_providers = executable_query_providers(self.settings)
         request = {
@@ -108,9 +152,72 @@ class LLMQueryPlanner:
             },
             "store": False,
         }
-        response = client.create_response(request)
+        planner_call: dict[str, Any] = {
+            "call_id": new_id("llmc"),
+            "stage": "planner",
+            "attempt_index": attempt_index,
+            "sequence_index": attempt_index,
+            "status": "started",
+            "validation_status": "started",
+            "model_name": self.settings.query_planner_model,
+            "planner_version": self.settings.query_planner_version,
+            "request": _json_safe(request),
+            "response": None,
+            "usage": {},
+            "metadata": {
+                "known_providers": list(known_providers),
+                "executable_providers": list(executable_providers),
+                "validation_feedback": validation_feedback,
+            },
+        }
+        started = time.perf_counter()
+        try:
+            response = client.create_response(request)
+        except Exception as exc:
+            planner_call.update(
+                {
+                    "status": "failed",
+                    "validation_status": "failed",
+                    "error_message": _exception_feedback(exc),
+                    "latency_ms": int((time.perf_counter() - started) * 1000),
+                    "response": None,
+                }
+            )
+            raise _PlannerCallFailed(planner_call, exc) from exc
+        planner_call["latency_ms"] = int((time.perf_counter() - started) * 1000)
         raw_output = response.output_text
-        return _parse_json_object(raw_output)
+        usage = _usage_payload(getattr(response, "usage", None))
+        planner_call["usage"] = usage
+        try:
+            parsed = _parse_json_object(raw_output)
+        except ValueError as exc:
+            planner_call.update(
+                {
+                    "status": "invalid",
+                    "validation_status": "parse_error",
+                    "error_message": _exception_feedback(exc),
+                    "raw_output": raw_output,
+                    "response": {
+                        "raw_output": raw_output,
+                        "parsed_json": None,
+                        "usage": usage,
+                    },
+                }
+            )
+            return {}, planner_call, exc
+        planner_call.update(
+            {
+                "status": "completed",
+                "validation_status": "parsed",
+                "raw_output": raw_output,
+                "response": {
+                    "raw_output": raw_output,
+                    "parsed_json": parsed,
+                    "usage": usage,
+                },
+            }
+        )
+        return parsed, planner_call, None
 
     def _plan_from_raw(self, query: str, raw: dict[str, Any]) -> QueryPlan:
         _reject_legacy_filters(raw, "query_plan")
@@ -146,6 +253,13 @@ class LLMQueryPlanner:
                 "executable_providers": list(executable_query_providers(self.settings)),
             },
         )
+
+
+class _PlannerCallFailed(Exception):
+    def __init__(self, call: dict[str, Any], cause: Exception) -> None:
+        super().__init__(str(cause))
+        self.call = call
+        self.cause = cause
 
 
 def _entity_from_raw(item: Any) -> Entity:
@@ -394,6 +508,113 @@ def _parse_json_object(raw_output: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("LLM planner JSON must be an object")
     return value
+
+
+def _mark_planner_call_validated(
+    planner_call: dict[str, Any],
+    candidate: QueryPlan,
+) -> None:
+    response = dict(planner_call.get("response") or {})
+    response["parsed_plan_id"] = candidate.plan_id
+    response["validation_status"] = "validated"
+    planner_call.update(
+        {
+            "status": "completed",
+            "validation_status": "validated",
+            "error_message": None,
+            "parsed_plan_id": candidate.plan_id,
+            "response": response,
+        }
+    )
+
+
+def _mark_planner_call_invalid(
+    planner_call: dict[str, Any],
+    *,
+    error_message: str,
+) -> None:
+    response = dict(planner_call.get("response") or {})
+    response["validation_status"] = "invalid"
+    planner_call.update(
+        {
+            "status": "invalid",
+            "validation_status": "invalid",
+            "error_message": error_message,
+            "response": response,
+        }
+    )
+
+
+def _with_planner_call_metadata(
+    plan: QueryPlan,
+    planner_call: dict[str, Any],
+) -> QueryPlan:
+    metadata = {
+        **plan.metadata,
+        **_planner_call_pointer(planner_call),
+    }
+    return plan.model_copy(update={"metadata": metadata})
+
+
+def _planner_call_pointer(planner_call: dict[str, Any]) -> dict[str, Any]:
+    pointer: dict[str, Any] = {}
+    call_id = _optional_text(planner_call.get("call_id"))
+    if call_id:
+        pointer["planner_llm_call_id"] = call_id
+    status = _optional_text(planner_call.get("status"))
+    if status:
+        pointer["planner_llm_status"] = status
+    validation_status = _optional_text(planner_call.get("validation_status"))
+    if validation_status:
+        pointer["planner_validation_status"] = validation_status
+    return pointer
+
+
+def _planner_observability_payload(
+    planner_calls: list[dict[str, Any]],
+) -> dict[str, Any]:
+    calls = [_json_safe(call) for call in planner_calls if call]
+    if not calls:
+        return {}
+    return {
+        "planner_llm_calls": calls,
+        "planner_llm_call": deepcopy(calls[-1]),
+    }
+
+
+def _usage_payload(usage: Any) -> dict[str, Any]:
+    if usage is None:
+        return {}
+    payload: dict[str, Any] = {}
+    if hasattr(usage, "model_dump"):
+        try:
+            model_payload = usage.model_dump()
+            if isinstance(model_payload, dict):
+                payload.update(_json_safe(model_payload))
+        except Exception:
+            pass
+    input_tokens = _first_attr(usage, "input_tokens", "prompt_tokens")
+    output_tokens = _first_attr(usage, "output_tokens", "completion_tokens")
+    total_tokens = _first_attr(usage, "total_tokens")
+    if input_tokens is not None:
+        payload["input_tokens"] = input_tokens
+    if output_tokens is not None:
+        payload["output_tokens"] = output_tokens
+    if total_tokens is not None:
+        payload["total_tokens"] = total_tokens
+    return payload
+
+
+def _first_attr(value: Any, *names: str) -> Any:
+    for name in names:
+        item = getattr(value, name, None)
+        if item is not None:
+            return item
+    return None
+
+
+def _json_safe(value: Any) -> Any:
+    return json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True, default=str))
 
 
 def _known_provider_names(settings: Settings) -> tuple[str, ...]:

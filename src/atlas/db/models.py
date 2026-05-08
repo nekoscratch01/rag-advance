@@ -3,6 +3,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -25,6 +26,77 @@ def utcnow() -> datetime:
 
 GRAPH_INDEX_STATUS_PENDING = "pending"
 WHOLE_CHUNK_TEXT_SPAN_HASH = "whole_chunk"
+LLM_CALL_RAW_GOVERNANCE_CHECK = """
+(
+    (
+        nullif(instructions_text, '') is null
+        and nullif(input_text, '') is null
+        and nullif(raw_output_text, '') is null
+        and nullif(parsed_answer_text, '') is null
+        and coalesce(request_json, '{}'::jsonb) = '{}'::jsonb
+        and coalesce(response_json, '{}'::jsonb) = '{}'::jsonb
+    )
+    or (
+        nullif(raw_payload_hash, '') is not null
+        and raw_retention_expires_at is not null
+        and raw_retention_expires_at > created_at
+        and nullif(btrim(raw_redaction_status), '') is not null
+        and lower(raw_redaction_status) <> 'unknown'
+        and nullif(btrim(raw_encryption_status), '') is not null
+        and lower(raw_encryption_status) <> 'unknown'
+    )
+)
+"""
+LLM_CALL_EVIDENCE_SNAPSHOT_GOVERNANCE_CHECK = """
+(
+    nullif(text_snapshot, '') is null
+    or (
+        nullif(text_hash, '') is not null
+        and snapshot_retention_expires_at is not null
+        and snapshot_retention_expires_at > created_at
+        and nullif(btrim(snapshot_redaction_status), '') is not null
+        and lower(snapshot_redaction_status) <> 'unknown'
+        and nullif(btrim(snapshot_encryption_status), '') is not null
+        and lower(snapshot_encryption_status) <> 'unknown'
+    )
+)
+"""
+CITATION_AUDIT_SNAPSHOT_GOVERNANCE_CHECK = """
+(
+    nullif(supporting_text_snapshot, '') is null
+    or (
+        nullif(supporting_text_hash, '') is not null
+        and snapshot_retention_expires_at is not null
+        and snapshot_retention_expires_at > created_at
+        and nullif(btrim(snapshot_redaction_status), '') is not null
+        and lower(snapshot_redaction_status) <> 'unknown'
+        and nullif(btrim(snapshot_encryption_status), '') is not null
+        and lower(snapshot_encryption_status) <> 'unknown'
+    )
+)
+"""
+QUALITY_REVIEW_PAYLOAD_GOVERNANCE_CHECK = """
+(
+    (
+        coalesce(payload_json, '{}'::jsonb) = '{}'::jsonb
+        and nullif(planner_verdict, '') is null
+        and nullif(evidence_relevance_verdict, '') is null
+        and nullif(answer_faithfulness_verdict, '') is null
+        and nullif(citation_verdict, '') is null
+        and nullif(issues_text, '') is null
+        and nullif(recommendations_text, '') is null
+    )
+    or (
+        nullif(payload_hash, '') is not null
+        and payload_retention_expires_at is not null
+        and payload_retention_expires_at > created_at
+        and nullif(btrim(payload_redaction_status), '') is not null
+        and lower(payload_redaction_status) <> 'unknown'
+        and nullif(btrim(payload_encryption_status), '') is not null
+        and lower(payload_encryption_status) <> 'unknown'
+    )
+)
+"""
 
 
 class Base(DeclarativeBase):
@@ -434,6 +506,18 @@ class QueryRun(Base):
     answers: Mapped[list["AnswerRecord"]] = relationship(back_populates="query_run")
     citations: Mapped[list["CitationRecord"]] = relationship(back_populates="query_run")
     citation_verifications: Mapped[list["CitationVerificationRecord"]] = relationship(back_populates="query_run")
+    llm_calls: Mapped[list["LLMCallRecord"]] = relationship(back_populates="query_run")
+    llm_call_evidence: Mapped[list["LLMCallEvidenceRecord"]] = relationship(
+        back_populates="query_run",
+        foreign_keys="LLMCallEvidenceRecord.query_id",
+        overlaps="evidence_records,llm_call",
+    )
+    citation_audits: Mapped[list["CitationAuditRecord"]] = relationship(
+        back_populates="query_run"
+    )
+    quality_reviews: Mapped[list["QualityReviewRecord"]] = relationship(
+        back_populates="query_run"
+    )
 
 
 class RetrievalEvent(Base):
@@ -469,12 +553,220 @@ class GenerationEvent(Base):
     query_run: Mapped[QueryRun] = relationship(back_populates="generation_events")
 
 
+class LLMCallRecord(Base):
+    __tablename__ = "llm_calls"
+    __table_args__ = (
+        PrimaryKeyConstraint("call_id", name="pk_llm_calls"),
+        ForeignKeyConstraint(
+            ["query_id"],
+            ["query_runs.query_id"],
+            name="fk_llm_calls_query",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("call_id", "query_id", name="uq_llm_calls_call_query"),
+        CheckConstraint(
+            LLM_CALL_RAW_GOVERNANCE_CHECK,
+            name="ck_llm_calls_raw_governance",
+        ),
+        Index("ix_llm_calls_query_id", "query_id"),
+        Index("ix_llm_calls_stage", "stage"),
+        Index("ix_llm_calls_query_stage", "query_id", "stage"),
+        Index("ix_llm_calls_query_stage_attempt", "query_id", "stage", "attempt_index"),
+        Index("ix_llm_calls_query_sequence", "query_id", "sequence_index"),
+    )
+
+    call_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    query_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempt_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sequence_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    model_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    prompt_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    planner_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    request_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    response_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    usage_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    instructions_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_output_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parsed_answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parsed_confidence: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    parsed_plan_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    validation_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    max_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reasoning_effort: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    store: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    raw_payload_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    raw_redaction_status: Mapped[str] = mapped_column(
+        String(64),
+        default="unredacted",
+        server_default=text("'unredacted'"),
+        nullable=False,
+    )
+    raw_encryption_status: Mapped[str] = mapped_column(
+        String(64),
+        default="plaintext",
+        server_default=text("'plaintext'"),
+        nullable=False,
+    )
+    raw_retention_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="llm_calls")
+    evidence_records: Mapped[list["LLMCallEvidenceRecord"]] = relationship(
+        back_populates="llm_call",
+        foreign_keys="[LLMCallEvidenceRecord.call_id, LLMCallEvidenceRecord.query_id]",
+        overlaps="llm_call_evidence,query_run",
+    )
+
+
+class LLMCallEvidenceRecord(Base):
+    __tablename__ = "llm_call_evidence"
+    __table_args__ = (
+        PrimaryKeyConstraint("record_id", name="pk_llm_call_evidence"),
+        UniqueConstraint(
+            "record_id",
+            "query_id",
+            name="uq_llm_call_evidence_record_query",
+        ),
+        UniqueConstraint("call_id", "rank", name="uq_llm_call_evidence_call_rank"),
+        CheckConstraint(
+            LLM_CALL_EVIDENCE_SNAPSHOT_GOVERNANCE_CHECK,
+            name="ck_llm_call_evidence_snapshot_governance",
+        ),
+        ForeignKeyConstraint(
+            ["call_id", "query_id"],
+            ["llm_calls.call_id", "llm_calls.query_id"],
+            name="fk_llm_call_evidence_call_query",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["query_id"],
+            ["query_runs.query_id"],
+            name="fk_llm_call_evidence_query",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["evidence_block_record_id", "query_id"],
+            ["evidence_blocks.record_id", "evidence_blocks.query_id"],
+            name="fk_llm_call_evidence_evidence_block_query",
+            ondelete="NO ACTION",
+        ),
+        Index("ix_llm_call_evidence_query_id", "query_id"),
+        Index("ix_llm_call_evidence_call_id", "call_id"),
+        Index("ix_llm_call_evidence_call_rank", "call_id", "rank"),
+        Index("ix_llm_call_evidence_chunk_id", "chunk_id"),
+        Index("ix_llm_call_evidence_evidence_id", "evidence_id"),
+        Index("ix_llm_call_evidence_evidence_block_record_id", "evidence_block_record_id"),
+        Index(
+            "ix_llm_call_evidence_query_evidence_block_record",
+            "query_id",
+            "evidence_block_record_id",
+        ),
+    )
+
+    record_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    call_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    query_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_block_record_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    chunk_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retrieval_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    text_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    text_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    snapshot_redaction_status: Mapped[str] = mapped_column(
+        String(64),
+        default="unredacted",
+        server_default=text("'unredacted'"),
+        nullable=False,
+    )
+    snapshot_encryption_status: Mapped[str] = mapped_column(
+        String(64),
+        default="plaintext",
+        server_default=text("'plaintext'"),
+        nullable=False,
+    )
+    snapshot_retention_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+    query_run: Mapped[QueryRun] = relationship(
+        back_populates="llm_call_evidence",
+        foreign_keys=[query_id],
+        overlaps="evidence_records,llm_call",
+    )
+    llm_call: Mapped[LLMCallRecord] = relationship(
+        back_populates="evidence_records",
+        foreign_keys=[call_id, query_id],
+        overlaps="llm_call_evidence,query_run",
+    )
+
+
 class QueryPlanRecord(Base):
     __tablename__ = "query_plans"
-    __table_args__ = (Index("ix_query_plans_query_id", "query_id"),)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["planner_call_id", "query_id"],
+            ["llm_calls.call_id", "llm_calls.query_id"],
+            name="fk_query_plans_planner_call_query",
+            ondelete="NO ACTION",
+        ),
+        UniqueConstraint("record_id", "query_id", name="uq_query_plans_record_query"),
+        Index("ix_query_plans_query_id", "query_id"),
+        Index("ix_query_plans_planner_call_id", "planner_call_id"),
+        Index("ix_query_plans_query_planner_call", "query_id", "planner_call_id"),
+    )
 
     record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    planner_call_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     plan_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     planner: Mapped[str | None] = mapped_column(String(128), nullable=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
@@ -526,7 +818,13 @@ class CandidateRecord(Base):
 
 class EvidenceBlockRecord(Base):
     __tablename__ = "evidence_blocks"
-    __table_args__ = (Index("ix_evidence_blocks_query_id", "query_id"),)
+    __table_args__ = (
+        UniqueConstraint("record_id", "query_id", name="uq_evidence_blocks_record_query"),
+        UniqueConstraint("evidence_id", "query_id", name="uq_evidence_blocks_evidence_query"),
+        Index("ix_evidence_blocks_query_id", "query_id"),
+        Index("ix_evidence_blocks_evidence_id", "evidence_id"),
+        Index("ix_evidence_blocks_query_evidence", "query_id", "evidence_id"),
+    )
 
     record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
@@ -567,10 +865,22 @@ class EvidenceEvaluationRecord(Base):
 
 class AnswerRecord(Base):
     __tablename__ = "answers"
-    __table_args__ = (Index("ix_answers_query_id", "query_id"),)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["answer_call_id", "query_id"],
+            ["llm_calls.call_id", "llm_calls.query_id"],
+            name="fk_answers_answer_call_query",
+            ondelete="NO ACTION",
+        ),
+        UniqueConstraint("record_id", "query_id", name="uq_answers_record_query"),
+        Index("ix_answers_query_id", "query_id"),
+        Index("ix_answers_answer_call_id", "answer_call_id"),
+        Index("ix_answers_query_answer_call", "query_id", "answer_call_id"),
+    )
 
     record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
+    answer_call_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     confidence: Mapped[str | None] = mapped_column(String(32), nullable=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -580,7 +890,10 @@ class AnswerRecord(Base):
 
 class CitationRecord(Base):
     __tablename__ = "citations"
-    __table_args__ = (Index("ix_citations_query_id", "query_id"),)
+    __table_args__ = (
+        UniqueConstraint("record_id", "query_id", name="uq_citations_record_query"),
+        Index("ix_citations_query_id", "query_id"),
+    )
 
     record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
@@ -594,7 +907,14 @@ class CitationRecord(Base):
 
 class CitationVerificationRecord(Base):
     __tablename__ = "citation_verifications"
-    __table_args__ = (Index("ix_citation_verifications_query_id", "query_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "record_id",
+            "query_id",
+            name="uq_citation_verifications_record_query",
+        ),
+        Index("ix_citation_verifications_query_id", "query_id"),
+    )
 
     record_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     query_id: Mapped[str] = mapped_column(ForeignKey("query_runs.query_id"), nullable=False)
@@ -603,6 +923,224 @@ class CitationVerificationRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     query_run: Mapped[QueryRun] = relationship(back_populates="citation_verifications")
+
+
+class CitationAuditRecord(Base):
+    __tablename__ = "citation_audits"
+    __table_args__ = (
+        PrimaryKeyConstraint("record_id", name="pk_citation_audits"),
+        ForeignKeyConstraint(
+            ["query_id"],
+            ["query_runs.query_id"],
+            name="fk_citation_audits_query",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["citation_record_id", "query_id"],
+            ["citations.record_id", "citations.query_id"],
+            name="fk_citation_audits_citation_record_query",
+        ),
+        ForeignKeyConstraint(
+            ["llm_call_evidence_record_id", "query_id"],
+            ["llm_call_evidence.record_id", "llm_call_evidence.query_id"],
+            name="fk_citation_audits_llm_call_evidence_query",
+        ),
+        ForeignKeyConstraint(
+            ["answer_record_id", "query_id"],
+            ["answers.record_id", "answers.query_id"],
+            name="fk_citation_audits_answer_record_query",
+            ondelete="NO ACTION",
+        ),
+        ForeignKeyConstraint(
+            ["answer_call_id", "query_id"],
+            ["llm_calls.call_id", "llm_calls.query_id"],
+            name="fk_citation_audits_answer_call_query",
+            ondelete="NO ACTION",
+        ),
+        ForeignKeyConstraint(
+            ["citation_verification_record_id", "query_id"],
+            ["citation_verifications.record_id", "citation_verifications.query_id"],
+            name="fk_citation_audits_citation_verification_query",
+            ondelete="NO ACTION",
+        ),
+        CheckConstraint(
+            CITATION_AUDIT_SNAPSHOT_GOVERNANCE_CHECK,
+            name="ck_citation_audits_snapshot_governance",
+        ),
+        Index("ix_citation_audits_query_id", "query_id"),
+        Index("ix_citation_audits_citation_id", "citation_id"),
+        Index("ix_citation_audits_citation_record_id", "citation_record_id"),
+        Index("ix_citation_audits_evidence_id", "evidence_id"),
+        Index(
+            "ix_citation_audits_llm_call_evidence_record_id",
+            "llm_call_evidence_record_id",
+        ),
+        Index("ix_citation_audits_answer_record_id", "answer_record_id"),
+        Index("ix_citation_audits_answer_call_id", "answer_call_id"),
+        Index(
+            "ix_citation_audits_citation_verification_record_id",
+            "citation_verification_record_id",
+        ),
+        Index("ix_citation_audits_query_citation", "query_id", "citation_id"),
+        Index(
+            "ix_citation_audits_query_citation_record",
+            "query_id",
+            "citation_record_id",
+        ),
+        Index("ix_citation_audits_query_evidence", "query_id", "evidence_id"),
+        Index(
+            "ix_citation_audits_query_llm_call_evidence_record",
+            "query_id",
+            "llm_call_evidence_record_id",
+        ),
+        Index("ix_citation_audits_query_answer_record", "query_id", "answer_record_id"),
+        Index("ix_citation_audits_query_answer_call", "query_id", "answer_call_id"),
+        Index(
+            "ix_citation_audits_query_citation_verification",
+            "query_id",
+            "citation_verification_record_id",
+        ),
+    )
+
+    record_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    query_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    citation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    citation_record_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    citation_verification_record_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    answer_record_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    answer_call_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    evidence_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    llm_call_evidence_record_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    chunk_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    verifier_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    unsupported_numbers_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issue_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    supporting_text_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    supporting_text_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    snapshot_redaction_status: Mapped[str] = mapped_column(
+        String(64),
+        default="unredacted",
+        server_default=text("'unredacted'"),
+        nullable=False,
+    )
+    snapshot_encryption_status: Mapped[str] = mapped_column(
+        String(64),
+        default="plaintext",
+        server_default=text("'plaintext'"),
+        nullable=False,
+    )
+    snapshot_retention_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="citation_audits")
+
+
+class QualityReviewRecord(Base):
+    __tablename__ = "quality_reviews"
+    __table_args__ = (
+        PrimaryKeyConstraint("record_id", name="pk_quality_reviews"),
+        ForeignKeyConstraint(
+            ["query_id"],
+            ["query_runs.query_id"],
+            name="fk_quality_reviews_query",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["answer_record_id", "query_id"],
+            ["answers.record_id", "answers.query_id"],
+            name="fk_quality_reviews_answer_record_query",
+        ),
+        ForeignKeyConstraint(
+            ["planner_call_id", "query_id"],
+            ["llm_calls.call_id", "llm_calls.query_id"],
+            name="fk_quality_reviews_planner_call_query",
+        ),
+        ForeignKeyConstraint(
+            ["answer_call_id", "query_id"],
+            ["llm_calls.call_id", "llm_calls.query_id"],
+            name="fk_quality_reviews_answer_call_query",
+        ),
+        ForeignKeyConstraint(
+            ["review_call_id", "query_id"],
+            ["llm_calls.call_id", "llm_calls.query_id"],
+            name="fk_quality_reviews_review_call_query",
+            ondelete="NO ACTION",
+        ),
+        CheckConstraint(
+            QUALITY_REVIEW_PAYLOAD_GOVERNANCE_CHECK,
+            name="ck_quality_reviews_payload_governance",
+        ),
+        Index("ix_quality_reviews_query_id", "query_id"),
+        Index("ix_quality_reviews_answer_record_id", "answer_record_id"),
+        Index("ix_quality_reviews_planner_call_id", "planner_call_id"),
+        Index("ix_quality_reviews_answer_call_id", "answer_call_id"),
+        Index("ix_quality_reviews_review_call_id", "review_call_id"),
+        Index("ix_quality_reviews_query_answer_record", "query_id", "answer_record_id"),
+        Index("ix_quality_reviews_query_planner_call", "query_id", "planner_call_id"),
+        Index("ix_quality_reviews_query_answer_call", "query_id", "answer_call_id"),
+        Index("ix_quality_reviews_query_review_call", "query_id", "review_call_id"),
+        Index("ix_quality_reviews_status", "status"),
+    )
+
+    record_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    query_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    answer_record_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    planner_call_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    answer_call_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    review_call_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewer: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    planner_verdict: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_relevance_verdict: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer_faithfulness_verdict: Mapped[str | None] = mapped_column(Text, nullable=True)
+    citation_verdict: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issues_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recommendations_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    payload_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    payload_redaction_status: Mapped[str] = mapped_column(
+        String(64),
+        default="unredacted",
+        server_default=text("'unredacted'"),
+        nullable=False,
+    )
+    payload_encryption_status: Mapped[str] = mapped_column(
+        String(64),
+        default="plaintext",
+        server_default=text("'plaintext'"),
+        nullable=False,
+    )
+    payload_retention_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+    query_run: Mapped[QueryRun] = relationship(back_populates="quality_reviews")
 
 
 class QueryCache(Base):

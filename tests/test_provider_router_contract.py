@@ -184,6 +184,50 @@ class _GraphProvider:
         )
 
 
+class _DuplicateChunkGraphProvider:
+    def retrieve_provider_result(
+        self,
+        db,
+        *,
+        query,
+        top_k,
+        filters,
+        options,
+        query_plan,
+        retrieval_tasks,
+    ):
+        evidence = (
+            Evidence(
+                evidence_id="g_local",
+                document_id="doc_1",
+                chunk_id="chk_1",
+                text="Graph duplicate for the same Apple supplier chunk.",
+                source_title="Apple 10-K",
+                source_uri=None,
+                section_title="Risk Factors",
+                page_start=10,
+                page_end=10,
+                retrieval_score=0.95,
+                rank=1,
+                token_count=7,
+                metadata={
+                    "provider": "graph",
+                    "retrieved_by": ["graph"],
+                },
+                retrieved_by=("graph",),
+            ),
+        )
+        return ProviderResult(
+            provider="graph",
+            task_id=retrieval_tasks[0].task_id,
+            unit_id=retrieval_tasks[0].unit_id,
+            status="executed",
+            evidence=evidence,
+            latency_ms=1,
+            trace={"provider": "graph", "status": "executed"},
+        )
+
+
 class _EmptyProvider:
     def __init__(self, provider: str) -> None:
         self.provider = provider
@@ -213,11 +257,15 @@ class _EmptyProvider:
 
 
 class _StaticOrchestrator:
-    def __init__(self, plan: QueryPlan) -> None:
+    def __init__(self, plan: QueryPlan, observability=None) -> None:
         self.plan_value = plan
+        self.last_observability = observability or {}
 
     def plan(self, query, *, use_llm=True):
         return self.plan_value
+
+    def plan_with_observability(self, query, *, use_llm=True):
+        return self.plan_value, self.last_observability
 
 
 class _Generator:
@@ -230,6 +278,15 @@ class _Generator:
             usage=LLMUsage(input_tokens=1, output_tokens=1),
             raw_output="{}",
         )
+
+
+class _RecordingEvidenceGenerator(_Generator):
+    def __init__(self) -> None:
+        self.evidence = None
+
+    def generate(self, *, query, evidence):
+        self.evidence = list(evidence)
+        return super().generate(query=query, evidence=evidence)
 
 
 class _DB:
@@ -315,6 +372,53 @@ def _nested_keys(value) -> set[str]:
             keys.update(_nested_keys(item))
         return keys
     return set()
+
+
+def _planner_observability_payload(
+    *,
+    call_id: str,
+    plan_id: str,
+    status: str = "completed",
+    validation_status: str = "validated",
+    error_message: str | None = None,
+):
+    raw_prompt = f"RAW PLANNER PROMPT SENTINEL {call_id}"
+    raw_response = f"RAW PLANNER RESPONSE SENTINEL {call_id}"
+    call = {
+        "call_id": call_id,
+        "stage": "planner",
+        "attempt_index": 1,
+        "sequence_index": 1,
+        "status": status,
+        "validation_status": validation_status,
+        "error_message": error_message,
+        "latency_ms": 9,
+        "model_name": "planner-model",
+        "planner_version": "query_planner_test",
+        "request": {
+            "model": "planner-model",
+            "instructions": "Planner instructions. " + raw_prompt,
+            "input": raw_prompt,
+            "max_output_tokens": 2000,
+            "reasoning": {"effort": "low"},
+            "text": {"format": {"type": "json_schema"}},
+            "store": False,
+        },
+        "response": {
+            "raw_output": raw_response,
+            "parsed_json": {
+                "standalone_query": "Explain Apple supplier disruption risk.",
+                "retrieval_units": [{"unit_id": "u_hybrid", "provider": "hybrid"}],
+            },
+            "parsed_plan_id": plan_id,
+            "validation_status": validation_status,
+            "usage": {"input_tokens": 31, "output_tokens": 13},
+        },
+        "usage": {"input_tokens": 31, "output_tokens": 13},
+        "raw_output": raw_response,
+        "parsed_plan_id": plan_id,
+    }
+    return {"planner_llm_calls": [call], "planner_llm_call": dict(call)}
 
 
 def test_provider_router_executes_registered_hybrid_and_skips_sql() -> None:
@@ -948,6 +1052,150 @@ def test_runtime_marks_llm_io_skipped_on_cache_hit() -> None:
     assert {"request", "response"}.isdisjoint(result.details["llm_io"])
 
 
+def test_runtime_persists_successful_planner_llm_call_without_raw_details_payload() -> None:
+    plan = QueryPlan(
+        plan_id="plan_planner_success",
+        original_query="Explain Apple supplier disruption risk.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="Apple supplier disruption risk",
+                provider="hybrid",
+            ),
+        ),
+        planner="llm_structured",
+    )
+    observability = _planner_observability_payload(
+        call_id="llmc_planner_success",
+        plan_id=plan.plan_id,
+    )
+    db = _DB()
+    runtime = QueryRuntime(
+        settings=Settings(openai_api_key=None, cache_enabled=False),
+        provider_router=ProviderRouter({"hybrid": _HybridProvider()}),
+        generator=_Generator(),
+        orchestrator=_StaticOrchestrator(plan, observability),
+    )
+
+    result = runtime.run(db, query=plan.original_query, top_k=3, filters={}, options={})
+
+    query_run = next(item for item in db.added if item.__tablename__ == "query_runs")
+    query_plan_record = next(item for item in db.added if item.__tablename__ == "query_plans")
+    planner_call = next(
+        item
+        for item in db.added
+        if item.__tablename__ == "llm_calls" and item.stage == "planner"
+    )
+    answer_call = next(
+        item
+        for item in db.added
+        if item.__tablename__ == "llm_calls" and item.stage == "answer"
+    )
+    raw_prompt = "RAW PLANNER PROMPT SENTINEL llmc_planner_success"
+    raw_response = "RAW PLANNER RESPONSE SENTINEL llmc_planner_success"
+
+    assert result.details["query_plan"]["plan_id"] == plan.plan_id
+    assert planner_call.call_id == "llmc_planner_success"
+    assert planner_call.stage == "planner"
+    assert planner_call.status == "completed"
+    assert planner_call.validation_status == "validated"
+    assert planner_call.parsed_plan_id == plan.plan_id
+    assert planner_call.input_tokens == 31
+    assert planner_call.output_tokens == 13
+    assert planner_call.request_json["input"] == raw_prompt
+    assert planner_call.raw_output_text == raw_response
+    assert planner_call.raw_payload_hash
+    assert planner_call.raw_retention_expires_at is not None
+    assert query_plan_record.planner_call_id == planner_call.call_id
+    assert query_plan_record.payload_json["metadata"]["planner_llm_call_id"] == (
+        planner_call.call_id
+    )
+    assert query_run.details_json["planner_llm"] == {
+        "planner_llm_call_id": planner_call.call_id,
+        "planner_llm_status": "completed",
+        "planner_validation_status": "validated",
+    }
+    assert answer_call.stage == "answer"
+    assert raw_prompt not in _json_blob(query_run.details_json)
+    assert raw_response not in _json_blob(query_run.details_json)
+    assert raw_prompt not in _json_blob(query_plan_record.payload_json)
+    assert raw_response not in _json_blob(query_plan_record.payload_json)
+    assert {"request", "response", "raw_output", "instructions", "input"}.isdisjoint(
+        _nested_keys(query_plan_record.payload_json["metadata"])
+    )
+
+
+def test_runtime_persists_invalid_planner_call_on_fallback_not_quality_run() -> None:
+    plan = QueryPlan(
+        plan_id="plan_planner_fallback",
+        original_query="Explain Apple supplier disruption risk.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="Apple supplier disruption risk",
+                provider="hybrid",
+            ),
+        ),
+        planner="rule_based_fallback",
+        metadata={
+            "fallback_reason": "llm_validation_failed",
+            "quality_eligible": False,
+            "not_quality_reason": "planner_fallback_not_quality_run",
+        },
+    )
+    observability = _planner_observability_payload(
+        call_id="llmc_planner_invalid",
+        plan_id="plan_bad_llm",
+        status="invalid",
+        validation_status="invalid",
+        error_message="ungrounded_entity:Imaginary Corp",
+    )
+    db = _DB()
+    runtime = QueryRuntime(
+        settings=Settings(openai_api_key=None, cache_enabled=False),
+        provider_router=ProviderRouter({"hybrid": _EmptyProvider("hybrid")}),
+        generator=_Generator(),
+        orchestrator=_StaticOrchestrator(plan, observability),
+    )
+
+    result = runtime.run(db, query=plan.original_query, top_k=3, filters={}, options={})
+
+    query_run = next(item for item in db.added if item.__tablename__ == "query_runs")
+    query_plan_record = next(item for item in db.added if item.__tablename__ == "query_plans")
+    planner_call = next(
+        item
+        for item in db.added
+        if item.__tablename__ == "llm_calls" and item.stage == "planner"
+    )
+    raw_prompt = "RAW PLANNER PROMPT SENTINEL llmc_planner_invalid"
+    raw_response = "RAW PLANNER RESPONSE SENTINEL llmc_planner_invalid"
+
+    assert result.confidence == "insufficient"
+    assert planner_call.call_id == "llmc_planner_invalid"
+    assert planner_call.status == "invalid"
+    assert planner_call.validation_status == "invalid"
+    assert planner_call.error_message == "ungrounded_entity:Imaginary Corp"
+    assert query_plan_record.planner_call_id == planner_call.call_id
+    metadata = query_plan_record.payload_json["metadata"]
+    assert metadata["fallback_reason"] == "llm_validation_failed"
+    assert metadata["quality_eligible"] is False
+    assert metadata["not_quality_reason"] == "planner_fallback_not_quality_run"
+    assert metadata["planner_llm_call_id"] == planner_call.call_id
+    assert metadata["planner_llm_status"] == "invalid"
+    assert query_run.details_json["planner_llm"]["planner_llm_status"] == "invalid"
+    assert raw_prompt not in _json_blob(query_run.details_json)
+    assert raw_response not in _json_blob(query_run.details_json)
+    assert raw_prompt not in _json_blob(query_plan_record.payload_json)
+    assert raw_response not in _json_blob(query_plan_record.payload_json)
+    assert not [
+        item
+        for item in db.added
+        if item.__tablename__ == "llm_calls" and item.stage == "answer"
+    ]
+
+
 def test_runtime_persists_llm_io_to_query_run_and_answer_record() -> None:
     raw_output = '{"answer":"Apple discussed supplier disruption risk [c1]."}'
 
@@ -986,15 +1234,23 @@ def test_runtime_persists_llm_io_to_query_run_and_answer_record() -> None:
 
     query_run = next(item for item in db.added if item.__tablename__ == "query_runs")
     answer_record = next(item for item in db.added if item.__tablename__ == "answers")
+    llm_call = next(item for item in db.added if item.__tablename__ == "llm_calls")
+    llm_call_evidence = next(
+        item for item in db.added if item.__tablename__ == "llm_call_evidence"
+    )
     llm_io = result.details["llm_io"]
-    request = llm_io["request"]
-    request_metadata = llm_io["request_metadata"]
-    request_input_blob = _json_blob(request["input"])
+    request_input_blob = _json_blob(llm_call.request_json["input"])
 
     assert query_run.details_json["llm_io"] == llm_io
-    assert answer_record.payload_json["llm_io"] == llm_io
-    assert llm_io["status"] == "completed"
-    assert set(request) == {
+    assert answer_record.answer_call_id == llm_io["answer_llm_call_id"]
+    assert answer_record.payload_json["answer_llm_call_id"] == llm_io["answer_llm_call_id"]
+    assert "llm_io" not in answer_record.payload_json
+    assert llm_io == {
+        "status": "completed",
+        "answer_llm_call_id": llm_call.call_id,
+    }
+    assert {"request", "response", "request_metadata"}.isdisjoint(llm_io)
+    assert set(llm_call.request_json) == {
         "model",
         "instructions",
         "input",
@@ -1002,8 +1258,10 @@ def test_runtime_persists_llm_io_to_query_run_and_answer_record() -> None:
         "reasoning",
         "store",
     }
-    assert {"prompt_version", "evidence_ids", "evidence_count"}.isdisjoint(request)
-    assert request_metadata == {
+    assert {"prompt_version", "evidence_ids", "evidence_count"}.isdisjoint(
+        llm_call.request_json
+    )
+    assert llm_call.metadata_json["request_metadata"] == {
         "prompt_version": runtime.settings.prompt_version,
         "evidence_ids": ["c1"],
         "evidence_count": 1,
@@ -1011,8 +1269,32 @@ def test_runtime_persists_llm_io_to_query_run_and_answer_record() -> None:
     assert plan.original_query in request_input_blob
     assert "Apple management discussed supplier disruption risk." in request_input_blob
     assert "c1" in request_input_blob
-    assert llm_io["response"]["raw_output"] == raw_output
-    assert {"api_key", "authorization", "openai_api_key"}.isdisjoint(_nested_keys(request))
+    assert llm_call.stage == "answer"
+    assert llm_call.status == "completed"
+    assert llm_call.response_json["raw_output"] == raw_output
+    assert llm_call.raw_output_text == raw_output
+    assert llm_call.parsed_answer_text == "Apple discussed supplier disruption risk [c1]."
+    assert llm_call.parsed_confidence == "supported"
+    assert llm_call.input_tokens == 12
+    assert llm_call.output_tokens == 7
+    assert llm_call.raw_payload_hash
+    assert llm_call.raw_redaction_status == "unredacted"
+    assert llm_call.raw_encryption_status == "plaintext"
+    assert llm_call.raw_retention_expires_at is not None
+    assert llm_call_evidence.call_id == llm_call.call_id
+    assert llm_call_evidence.evidence_id == "c1"
+    assert llm_call_evidence.chunk_id == "chk_1"
+    assert llm_call_evidence.text_snapshot == (
+        "Apple management discussed supplier disruption risk."
+    )
+    assert llm_call_evidence.text_hash
+    assert llm_call_evidence.snapshot_redaction_status == "unredacted"
+    assert llm_call_evidence.snapshot_encryption_status == "plaintext"
+    assert llm_call_evidence.snapshot_retention_expires_at is not None
+    assert llm_call_evidence.evidence_block_record_id is not None
+    assert {"api_key", "authorization", "openai_api_key"}.isdisjoint(
+        _nested_keys(llm_call.request_json)
+    )
 
 
 def test_runtime_llm_io_request_matches_openai_answer_generator_client_request() -> None:
@@ -1054,14 +1336,19 @@ def test_runtime_llm_io_request_matches_openai_answer_generator_client_request()
         orchestrator=_StaticOrchestrator(plan),
     )
 
-    result = runtime.run(_DB(), query=plan.original_query, top_k=3, filters={}, options={})
+    db = _DB()
+    result = runtime.run(db, query=plan.original_query, top_k=3, filters={}, options={})
 
     llm_io = result.details["llm_io"]
+    llm_call = next(item for item in db.added if item.__tablename__ == "llm_calls")
 
     assert len(fake_client.requests) == 1
-    assert llm_io["status"] == "completed"
-    assert llm_io["request"] == fake_client.requests[0]
-    assert set(llm_io["request"]) == {
+    assert llm_io == {
+        "status": "completed",
+        "answer_llm_call_id": llm_call.call_id,
+    }
+    assert llm_call.request_json == fake_client.requests[0]
+    assert set(llm_call.request_json) == {
         "model",
         "instructions",
         "input",
@@ -1069,23 +1356,135 @@ def test_runtime_llm_io_request_matches_openai_answer_generator_client_request()
         "reasoning",
         "store",
     }
-    assert llm_io["request_metadata"] == {
+    assert llm_call.metadata_json["request_metadata"] == {
         "prompt_version": "prompt-test",
         "evidence_ids": ["c1"],
         "evidence_count": 1,
     }
-    assert llm_io["response"]["parsed_answer"] == (
+    assert llm_call.parsed_answer_text == (
         "Apple discussed supplier disruption risk [c1]."
     )
-    assert llm_io["response"]["parsed_confidence"] == "supported"
-    assert llm_io["response"]["usage"] == {
+    assert llm_call.parsed_confidence == "supported"
+    assert llm_call.usage_json == {
         "input_tokens": 21,
         "output_tokens": 9,
     }
+    assert {"request", "response", "raw_output", "parsed_answer"}.isdisjoint(llm_io)
 
 
-def test_record_v1_trace_family_copies_llm_io_to_answer_payload() -> None:
-    llm_io = {
+def test_runtime_dedupes_prompt_evidence_by_chunk_id_and_merges_provider_provenance() -> None:
+    plan = QueryPlan(
+        plan_id="plan_hybrid_graph_duplicate",
+        original_query="Explain Apple supplier disruption risk.",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_hybrid",
+                purpose="risk_factor_text",
+                text="Apple supplier disruption risk",
+                provider="hybrid",
+            ),
+            RetrievalUnit(
+                unit_id="u_graph",
+                purpose="supplier_graph_grounding",
+                text="Apple supplier disruption risk",
+                provider="graph",
+            ),
+        ),
+    )
+    db = _DB()
+    generator = _RecordingEvidenceGenerator()
+    runtime = QueryRuntime(
+        settings=Settings(
+            openai_api_key=None,
+            cache_enabled=False,
+            query_runtime_executable_providers="hybrid,graph",
+        ),
+        provider_router=ProviderRouter(
+            {
+                "hybrid": _HybridProvider(),
+                "graph": _DuplicateChunkGraphProvider(),
+            }
+        ),
+        generator=generator,
+        orchestrator=_StaticOrchestrator(plan),
+    )
+
+    result = runtime.run(db, query=plan.original_query, top_k=5, filters={}, options={})
+
+    llm_call_evidence = [
+        item for item in db.added if item.__tablename__ == "llm_call_evidence"
+    ]
+    assert generator.evidence is not None
+    assert len(generator.evidence) == 1
+    assert len(llm_call_evidence) == 1
+    assert llm_call_evidence[0].chunk_id == "chk_1"
+    prompt_metadata = generator.evidence[0].metadata
+    provider_local_provenance = {
+        item.get("provider_local_provider")
+        for item in prompt_metadata["prompt_provider_provenance"]
+    }
+    provider_names = set(prompt_metadata["prompt_providers"])
+    assert {"hybrid", "graph"} <= provider_local_provenance
+    assert {"text_hybrid", "graph"} <= provider_names
+    assert prompt_metadata["prompt_deduped"] is True
+    assert set(prompt_metadata["prompt_deduped_evidence_ids"]) == {"c1", "c2"}
+    assert result.details["retrieval_trace"]["evidence_count"] == 1
+    assert result.details["retrieval_trace"]["top_k"][0]["prompt_deduped"] is True
+    assert result.details["llm_io"]["answer_llm_call_id"]
+
+
+def test_record_v1_trace_family_writes_answer_llm_call_without_raw_answer_payload() -> None:
+    call_id = "llmc_answer"
+    request = {
+        "model": "fake-generator",
+        "instructions": "Answer using evidence.",
+        "input": (
+            "Question: Explain Apple supplier disruption risk.\n"
+            "[c1] Apple management discussed supplier disruption risk."
+        ),
+        "max_output_tokens": 2000,
+        "reasoning": {"effort": "low"},
+        "store": False,
+    }
+    observability = {
+        "answer_llm_call": {
+            "call_id": call_id,
+            "stage": "answer",
+            "status": "completed",
+            "model_name": "fake-generator",
+            "prompt_version": "test",
+            "request": request,
+            "request_metadata": {
+                "prompt_version": "test",
+                "evidence_ids": ["c1"],
+                "evidence_count": 1,
+            },
+            "response": {
+                "raw_output": '{"answer":"Apple discussed supplier disruption risk [c1]."}',
+                "parsed_answer": "Apple discussed supplier disruption risk [c1].",
+                "parsed_confidence": "supported",
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+        },
+        "answer_prompt_evidence": [
+            {
+                "evidence_id": "c1",
+                "rank": 1,
+                "provider": "text_hybrid",
+                "chunk_id": "chk_1",
+                "document_id": "doc_1",
+                "page_start": 10,
+                "page_end": 10,
+                "retrieval_score": 1.0,
+                "token_count": 8,
+                "text_snapshot": "Apple management discussed supplier disruption risk.",
+            }
+        ],
+    }
+    legacy_raw_llm_io = {
+        "status": "completed",
+        "answer_llm_call_id": call_id,
         "request": {
             "input": (
                 "Question: Explain Apple supplier disruption risk.\n"
@@ -1107,7 +1506,19 @@ def test_record_v1_trace_family_copies_llm_io_to_answer_payload() -> None:
         model_name="fake-generator",
         prompt_version="test",
         latency_ms=12,
-        details_json={"llm_io": llm_io},
+        details_json={
+            "llm_io": legacy_raw_llm_io,
+            "retrieval_trace": {
+                "top_k": [
+                    {
+                        "evidence_id": "c1",
+                        "chunk_id": "chk_1",
+                        "rank": 1,
+                        "retrieval_score": 1.0,
+                    }
+                ]
+            },
+        },
     )
     generation_event = GenerationEvent(
         event_id="gen_llm_io",
@@ -1118,10 +1529,53 @@ def test_record_v1_trace_family_copies_llm_io_to_answer_payload() -> None:
     )
     db = _DB()
 
-    record_v1_trace_family(db, query_run, [], generation_event)
+    record_v1_trace_family(
+        db,
+        query_run,
+        [],
+        generation_event,
+        observability=observability,
+    )
 
     answer_record = next(item for item in db.added if item.__tablename__ == "answers")
-    assert answer_record.payload_json["llm_io"] == llm_io
+    llm_call = next(item for item in db.added if item.__tablename__ == "llm_calls")
+    llm_call_evidence = next(
+        item for item in db.added if item.__tablename__ == "llm_call_evidence"
+    )
+    assert query_run.details_json["llm_io"] == {
+        "status": "completed",
+        "answer_llm_call_id": call_id,
+    }
+    assert answer_record.answer_call_id == call_id
+    assert answer_record.payload_json == {
+        "answer": "Apple discussed supplier disruption risk [c1].",
+        "confidence": "supported",
+        "model": "fake-generator",
+        "prompt_version": "test",
+        "generation_event": {
+            "event_id": "gen_llm_io",
+            "model_name": "fake-generator",
+            "prompt_version": "test",
+            "input_tokens": None,
+            "output_tokens": None,
+            "latency_ms": None,
+            "status": "completed",
+            "error_message": None,
+        },
+        "answer_llm_call_id": call_id,
+    }
+    assert llm_call.call_id == call_id
+    assert llm_call.request_json == request
+    assert llm_call.raw_output_text == (
+        '{"answer":"Apple discussed supplier disruption risk [c1]."}'
+    )
+    assert llm_call.raw_payload_hash
+    assert llm_call_evidence.call_id == call_id
+    assert llm_call_evidence.chunk_id == "chk_1"
+    assert llm_call_evidence.text_snapshot == (
+        "Apple management discussed supplier disruption risk."
+    )
+    assert llm_call_evidence.evidence_block_record_id is not None
 
 
 def test_runtime_persists_provider_trace_when_generation_fails() -> None:
@@ -1162,8 +1616,35 @@ def test_runtime_persists_provider_trace_when_generation_fails() -> None:
     retrieval_result = next(
         item for item in db.added if item.__tablename__ == "retrieval_results"
     )
+    answer_record = next(item for item in db.added if item.__tablename__ == "answers")
+    llm_call = next(item for item in db.added if item.__tablename__ == "llm_calls")
+    llm_call_evidence = next(
+        item for item in db.added if item.__tablename__ == "llm_call_evidence"
+    )
     assert query_run.details_json["provider_results"][0]["status"] == "executed"
     assert query_run.details_json["retrieval_trace"]["evidence_count"] == 1
+    assert query_run.details_json["llm_io"] == {
+        "status": "failed",
+        "answer_llm_call_id": llm_call.call_id,
+        "error_message": "LLM failed after retrieval.",
+    }
+    assert {"request", "response", "raw_output"}.isdisjoint(
+        query_run.details_json["llm_io"]
+    )
+    assert answer_record.answer_call_id == llm_call.call_id
+    assert answer_record.payload_json["answer_llm_call_id"] == llm_call.call_id
+    assert "llm_io" not in answer_record.payload_json
+    assert llm_call.stage == "answer"
+    assert llm_call.status == "failed"
+    assert llm_call.error_message == "LLM failed after retrieval."
+    assert llm_call.request_json["model"] == runtime.settings.llm_model
+    assert llm_call.response_json == {}
+    assert llm_call.raw_payload_hash
+    assert llm_call.raw_retention_expires_at is not None
+    assert llm_call_evidence.call_id == llm_call.call_id
+    assert llm_call_evidence.text_snapshot == (
+        "Apple management discussed supplier disruption risk."
+    )
     assert retrieval_result.payload_json["provider_results"][0]["status"] == "executed"
     assert retrieval_result.payload_json["provider_router_trace"]["status"] == "executed"
 
