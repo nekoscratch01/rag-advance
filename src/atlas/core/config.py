@@ -3,8 +3,19 @@ from functools import lru_cache
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from atlas.core.errors import AtlasError, ErrorCode
+
 
 IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid", "graph")
+RESERVED_INTERNAL_PROVIDER_NAMES = (
+    "dense",
+    "bm25",
+    "sparse",
+    "table",
+    "section",
+    "metric_alias",
+)
+NON_EXECUTABLE_QUERY_PROVIDERS = ("sql",)
 
 
 class Settings(BaseSettings):
@@ -23,13 +34,18 @@ class Settings(BaseSettings):
     qdrant_collection: str = "atlas_chunks_bge_small_zh_v1_5"
     qdrant_dense_vector_name: str = "dense"
     qdrant_sparse_vector_name: str = "bm25"
+    vector_store_backend: str = "qdrant"
+    graph_store_backend: str = "postgres_graph"
 
+    embedding_backend: str = "local_bge"
+    # Deprecated compatibility setting; backend construction uses embedding_backend.
     embedding_provider: str = "local"
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
     embedding_dim: int = 512
     embedding_batch_size: int = 16
 
     retrieval_mode: str = "hybrid"
+    sparse_backend: str = "fastembed_bm25"
     bm25_enabled: bool = True
     bm25_model: str = "Qdrant/bm25"
     bm25_language: str = "english"
@@ -40,11 +56,16 @@ class Settings(BaseSettings):
     hybrid_lexical_top_k: int = 24
     hybrid_rrf_k: int = 60
     rrf_top_k: int = 40
+    reranker_backend: str = "cross_encoder"
     reranker_enabled: bool = True
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
     reranker_top_k: int = 30
     reranker_output_k: int = 8
 
+    llm_client_backend: str = "openai"
+    answer_generator_backend: str = "openai"
+    # Deprecated compatibility setting; backend construction uses llm_client_backend
+    # and answer_generator_backend.
     llm_provider: str = "openai"
     llm_model: str = "gpt-5-nano"
     llm_timeout_seconds: int = 60
@@ -56,7 +77,7 @@ class Settings(BaseSettings):
     finance_metric_ontology_path: str = "configs/finance_metric_ontology.yaml"
     query_planner_max_units: int = 6
     query_planner_known_providers: str = "hybrid,sql,graph"
-    query_runtime_executable_providers: str = "hybrid"
+    query_runtime_executable_providers: str = "hybrid,graph"
     # Deprecated: retained only so older .env files do not fail settings parsing.
     query_planner_enabled_providers: str = "hybrid"
     query_planner_retry_count: int = 2
@@ -94,13 +115,70 @@ def enabled_query_providers(settings: Settings) -> tuple[str, ...]:
 
 
 def known_query_providers(settings: Settings) -> tuple[str, ...]:
-    providers = _provider_list(settings.query_planner_known_providers)
+    reserved = set(RESERVED_INTERNAL_PROVIDER_NAMES)
+    providers = tuple(
+        provider
+        for provider in _provider_list(settings.query_planner_known_providers)
+        if provider not in reserved
+    )
     return providers or ("hybrid", "sql", "graph")
 
 
 def executable_query_providers(settings: Settings) -> tuple[str, ...]:
     requested = _provider_list(settings.query_runtime_executable_providers)
-    return tuple(provider for provider in requested if provider in IMPLEMENTED_RUNTIME_PROVIDERS)
+    known_providers = known_query_providers(settings)
+    known = set(known_providers)
+    registered = _registered_runtime_providers()
+    non_executable = set(NON_EXECUTABLE_QUERY_PROVIDERS)
+    reserved = set(RESERVED_INTERNAL_PROVIDER_NAMES)
+    reserved_requested = tuple(provider for provider in requested if provider in reserved)
+    unknown_requested = tuple(
+        provider
+        for provider in requested
+        if provider not in known and provider not in registered and provider not in non_executable
+    )
+    unregistered_requested = tuple(
+        provider
+        for provider in requested
+        if provider in known
+        and provider not in registered
+        and provider not in non_executable
+    )
+    if reserved_requested or unknown_requested or unregistered_requested:
+        problems = []
+        if reserved_requested:
+            problems.append(f"reserved lanes: {', '.join(reserved_requested)}")
+        if unknown_requested:
+            problems.append(f"unknown providers: {', '.join(unknown_requested)}")
+        if unregistered_requested:
+            problems.append(f"not registered: {', '.join(unregistered_requested)}")
+        raise AtlasError(
+            ErrorCode.CONFIGURATION_ERROR,
+            "Invalid executable query provider configuration: " + "; ".join(problems) + ".",
+            status_code=500,
+            details={
+                "requested": list(requested),
+                "known_providers": list(known_providers),
+                "registered_providers": sorted(registered),
+                "non_executable_providers": list(non_executable),
+                "reserved_providers": list(reserved_requested),
+                "unknown_providers": list(unknown_requested),
+                "unregistered_providers": list(unregistered_requested),
+            },
+        )
+    return tuple(
+        provider
+        for provider in requested
+        if provider in registered and provider in known and provider not in non_executable
+    )
+
+
+def _registered_runtime_providers() -> set[str]:
+    try:
+        from atlas.retrieval.providers.registry import provider_registry
+    except ImportError:
+        return set(IMPLEMENTED_RUNTIME_PROVIDERS)
+    return set(provider_registry.names)
 
 
 def _provider_list(value: str) -> tuple[str, ...]:

@@ -33,8 +33,10 @@ from atlas.db.repositories import add_query_trace, get_v1_trace_family, record_v
 from atlas.db.session import SessionLocal, get_db, init_db
 from atlas.main import create_app
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
+from atlas.retrieval.contracts import ProviderResult
 from atlas.retrieval.models.evidence import Evidence
 from atlas.retrieval.models.retrieval_task import tasks_from_plan
+from atlas.retrieval.providers.base import RetrievalContext, RetrievalProvider
 from atlas.retrieval.router import ProviderRouter
 
 
@@ -52,12 +54,16 @@ class _FakeDB:
 class _FakeOrchestrator:
     def __init__(self, plan: QueryPlan) -> None:
         self.plan_value = plan
+        self.executable_provider_calls = []
 
-    def plan(self, query, *, use_llm=True):
+    def plan(self, query, *, use_llm=True, executable_providers=None):
+        self.executable_provider_calls.append(executable_providers)
         return self.plan_value
 
 
-class _FakeRetriever:
+class _FakeRetriever(RetrievalProvider):
+    provider_name = "hybrid"
+
     def __init__(self) -> None:
         self.received_plan = None
         self.received_tasks = None
@@ -93,11 +99,56 @@ class _FakeRetriever:
             )
         ]
 
+    def retrieve_provider_result(
+        self,
+        db,
+        *,
+        query,
+        top_k,
+        filters,
+        options,
+        query_plan,
+        retrieval_tasks,
+    ):
+        evidence = self.retrieve_with_plan(
+            db,
+            query=query,
+            top_k=top_k,
+            filters=filters,
+            options=options,
+            query_plan=query_plan,
+            retrieval_tasks=retrieval_tasks,
+        )
+        return ProviderResult(
+            provider="hybrid",
+            task_id=retrieval_tasks[0].task_id if retrieval_tasks else None,
+            unit_id=retrieval_tasks[0].unit_id if retrieval_tasks else None,
+            status="executed" if evidence else "empty",
+            evidence=tuple(evidence),
+            latency_ms=1,
+            trace={"provider": "hybrid", "status": "executed" if evidence else "empty"},
+        )
+
+    async def aretrieve_candidates(self, context: RetrievalContext):
+        return self.retrieve_provider_result(
+            context.db,
+            query=context.query,
+            top_k=context.top_k,
+            filters=context.filters,
+            options=context.options,
+            query_plan=context.query_plan,
+            retrieval_tasks=context.retrieval_tasks,
+        )
+
 
 class _FakeRuntime:
     def __init__(self, retriever: _FakeRetriever) -> None:
-        self.settings = Settings(openai_api_key=None)
+        self.settings = Settings(
+            openai_api_key=None,
+            query_runtime_executable_providers="hybrid",
+        )
         self.retriever = retriever
+        self.provider_router = ProviderRouter({"hybrid": retriever})
 
 
 _TRACE_DELETE_ORDER = (
@@ -347,7 +398,7 @@ def test_record_v1_trace_family_persists_design_table_family_records() -> None:
                     "task_id": "rt_sql",
                     "unit_id": "u_sql",
                     "status": "skipped_non_executable",
-                    "reason": "provider_not_executable_in_v1:sql",
+                    "reason": "provider_not_executable:sql",
                 },
                 {
                     "provider": "hybrid",
@@ -765,9 +816,10 @@ def test_query_endpoint_does_not_expose_new_raw_llm_io_payloads() -> None:
 def test_retrieve_endpoint_returns_plan_tasks_and_evidence() -> None:
     plan = _plan()
     retriever = _FakeRetriever()
+    orchestrator = _FakeOrchestrator(plan)
     app = create_app()
     app.dependency_overrides[get_db] = lambda: object()
-    app.dependency_overrides[get_query_orchestrator] = lambda: _FakeOrchestrator(plan)
+    app.dependency_overrides[get_query_orchestrator] = lambda: orchestrator
     app.dependency_overrides[get_query_runtime] = lambda: _FakeRuntime(retriever)
     client = TestClient(app)
 
@@ -789,12 +841,14 @@ def test_retrieve_endpoint_returns_plan_tasks_and_evidence() -> None:
     assert [task.unit_id for task in retriever.received_tasks] == [
         task.unit_id for task in tasks_from_plan(plan)
     ]
+    assert orchestrator.executable_provider_calls == [("hybrid",)]
 
 
 def test_plan_endpoint_uses_runtime_provider_router_capability() -> None:
     plan = _plan()
+    orchestrator = _FakeOrchestrator(plan)
     app = create_app()
-    app.dependency_overrides[get_query_orchestrator] = lambda: _FakeOrchestrator(plan)
+    app.dependency_overrides[get_query_orchestrator] = lambda: orchestrator
     app.dependency_overrides[get_provider_router] = lambda: ProviderRouter({})
     client = TestClient(app)
 
@@ -811,3 +865,4 @@ def test_plan_endpoint_uses_runtime_provider_router_capability() -> None:
     payload = response.json()
     assert payload["retrieval_tasks"][0]["provider"] == "hybrid"
     assert payload["retrieval_tasks"][0]["provider_status"] == "skipped_non_executable"
+    assert orchestrator.executable_provider_calls == [()]

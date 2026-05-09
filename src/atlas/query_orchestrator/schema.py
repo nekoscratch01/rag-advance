@@ -16,8 +16,16 @@ QueryType = Literal[
     "ambiguous",
 ]
 
-ProviderName = Literal["hybrid", "sql", "graph"]
-KNOWN_PROVIDERS: tuple[ProviderName, ...] = ("hybrid", "sql", "graph")
+ProviderName = str
+KNOWN_PROVIDERS: tuple[str, ...] = ("hybrid", "sql", "graph")
+RESERVED_INTERNAL_PROVIDER_NAMES: tuple[str, ...] = (
+    "dense",
+    "bm25",
+    "sparse",
+    "table",
+    "section",
+    "metric_alias",
+)
 
 
 class _StrictModel(BaseModel):
@@ -92,6 +100,8 @@ class RetrievalUnit(_StrictModel):
             )
         if provider is not None and str(provider) != retrievers[0]:
             raise ValueError("provider and legacy retrievers disagree")
+        if retrievers[0] in RESERVED_INTERNAL_PROVIDER_NAMES:
+            raise ValueError(f"legacy_retriever_is_internal_lane:{retrievers[0]}")
         payload["provider"] = retrievers[0]
         metadata = dict(payload.get("metadata") or {})
         metadata["legacy_retrievers"] = list(retrievers)
@@ -109,9 +119,12 @@ class RetrievalUnit(_StrictModel):
     @field_validator("provider")
     @classmethod
     def _provider_known(cls, value: ProviderName) -> ProviderName:
-        if value not in KNOWN_PROVIDERS:
-            raise ValueError(f"unknown_provider:{value}")
-        return value
+        provider = str(value).strip().lower()
+        if not provider:
+            raise ValueError("unknown_provider:")
+        if provider in RESERVED_INTERNAL_PROVIDER_NAMES:
+            raise ValueError(f"provider_is_internal_lane:{provider}")
+        return provider
 
     @property
     def retrievers(self) -> tuple[ProviderName, ...]:

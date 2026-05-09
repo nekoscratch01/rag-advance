@@ -1,3 +1,5 @@
+import asyncio
+import inspect
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -10,7 +12,7 @@ from atlas.api.dependencies import (
     get_query_runtime,
     settings_dependency,
 )
-from atlas.core.config import Settings, executable_query_providers
+from atlas.core.config import Settings
 from atlas.db.repositories import get_chunks_by_ids, get_query_run, get_v1_trace_family
 from atlas.db.session import get_db
 from atlas.query_orchestrator.schema import serialize_query_plan
@@ -48,10 +50,16 @@ def plan_query(
     provider_router: ProviderRouter = Depends(get_provider_router),
 ) -> dict[str, Any]:
     use_llm = not _truthy(request.options.get("query_plan_fallback_only"))
-    plan = orchestrator.plan(request.query, use_llm=use_llm)
+    executable_providers = provider_router.executable_providers
+    plan = _plan_with_executable_providers(
+        orchestrator,
+        request.query,
+        use_llm=use_llm,
+        executable_providers=executable_providers,
+    )
     tasks = tasks_from_plan(
         plan,
-        executable_providers=provider_router.executable_providers,
+        executable_providers=executable_providers,
     )
     return {
         "query_plan": serialize_query_plan(plan),
@@ -60,18 +68,23 @@ def plan_query(
 
 
 @router.post("")
-def run_query(
+async def run_query(
     request: QueryRequest,
-    db: Session = Depends(get_db),
     runtime: QueryRuntime = Depends(get_query_runtime),
 ) -> dict[str, Any]:
-    result = runtime.run(
-        db,
-        query=request.query,
-        top_k=request.top_k,
-        filters=request.filters,
-        options=request.options,
-    )
+    if hasattr(runtime, "arun"):
+        result = await runtime.arun(
+            query=request.query,
+            top_k=request.top_k,
+            filters=request.filters,
+            options=request.options,
+        )
+    else:
+        result = await asyncio.to_thread(
+            _run_runtime_with_owned_session,
+            runtime,
+            request,
+        )
     return {
         "query_id": result.query_id,
         "trace_id": result.trace_id,
@@ -90,8 +103,13 @@ def retrieve_only(
     orchestrator: QueryOrchestrator = Depends(get_query_orchestrator),
 ) -> dict[str, Any]:
     use_llm = not _truthy(request.options.get("query_plan_fallback_only"))
-    plan = orchestrator.plan(request.query, use_llm=use_llm)
     executable_providers = _runtime_executable_providers(runtime)
+    plan = _plan_with_executable_providers(
+        orchestrator,
+        request.query,
+        use_llm=use_llm,
+        executable_providers=executable_providers,
+    )
     tasks = tasks_from_plan(plan, executable_providers=executable_providers)
     top_k = request.top_k or runtime.settings.default_top_k
     runtime_options = {
@@ -143,6 +161,22 @@ def retrieve_only(
         "provider_results": provider_results,
         "evidence": [_serialize_evidence(item) for item in evidence],
     }
+
+
+def _run_runtime_with_owned_session(runtime: QueryRuntime, request: QueryRequest):
+    from atlas.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return runtime.run(
+            db,
+            query=request.query,
+            top_k=request.top_k,
+            filters=request.filters,
+            options=request.options,
+        )
+    finally:
+        db.close()
 
 
 @router.get("/{query_id}")
@@ -322,10 +356,35 @@ def _runtime_executable_providers(runtime: QueryRuntime) -> tuple[str, ...]:
     executable = getattr(provider_router, "executable_providers", None)
     if executable is not None:
         return tuple(executable)
-    settings = getattr(runtime, "settings", None)
-    if isinstance(settings, Settings):
-        return executable_query_providers(settings)
     return ("hybrid",)
+
+
+def _plan_with_executable_providers(
+    orchestrator: QueryOrchestrator,
+    query: str,
+    *,
+    use_llm: bool,
+    executable_providers: tuple[str, ...],
+):
+    plan = getattr(orchestrator, "plan")
+    if _call_accepts_keyword(plan, "executable_providers"):
+        return plan(
+            query,
+            use_llm=use_llm,
+            executable_providers=executable_providers,
+        )
+    return plan(query, use_llm=use_llm)
+
+
+def _call_accepts_keyword(callable_obj: Any, keyword: str) -> bool:
+    try:
+        signature = inspect.signature(callable_obj)
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD or name == keyword
+        for name, parameter in signature.parameters.items()
+    )
 
 
 def _serialize_retrieval_event(event, chunk) -> dict[str, Any]:

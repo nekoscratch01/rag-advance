@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import inspect
 from typing import Any
 
 from atlas.core.config import Settings, executable_query_providers, known_query_providers
@@ -30,8 +31,18 @@ class QueryOrchestrator:
         self.llm_planner = llm_planner or LLMQueryPlanner(settings=settings, ontology=self.ontology)
         self.last_observability: dict[str, Any] = {}
 
-    def plan(self, query: str, *, use_llm: bool = True) -> QueryPlan:
-        plan, observability = self.plan_with_observability(query, use_llm=use_llm)
+    def plan(
+        self,
+        query: str,
+        *,
+        use_llm: bool = True,
+        executable_providers: tuple[str, ...] | None = None,
+    ) -> QueryPlan:
+        plan, observability = self.plan_with_observability(
+            query,
+            use_llm=use_llm,
+            executable_providers=executable_providers,
+        )
         self.last_observability = observability
         return plan
 
@@ -40,8 +51,8 @@ class QueryOrchestrator:
         query: str,
         *,
         use_llm: bool = True,
+        executable_providers: tuple[str, ...] | None = None,
     ) -> tuple[QueryPlan, dict[str, Any]]:
-        self.last_observability = {}
         fallback_reason = "llm_unavailable" if use_llm else "manual_fallback_requested"
         fallback_details: dict[str, Any] = {}
         planner_observability: dict[str, Any] = {}
@@ -50,6 +61,7 @@ class QueryOrchestrator:
                 candidate, planner_observability = _call_llm_planner_with_observability(
                     self.llm_planner,
                     query,
+                    executable_providers=executable_providers,
                 )
                 validation = self.validator.validate(candidate)
                 if validation.ok:
@@ -65,7 +77,10 @@ class QueryOrchestrator:
                                 **candidate.metadata,
                                 "known_providers": list(known_query_providers(self.settings)),
                                 "executable_providers": list(
-                                    executable_query_providers(self.settings)
+                                    _runtime_executable_providers(
+                                        self.settings,
+                                        executable_providers,
+                                    )
                                 ),
                                 "validation": {
                                     "warnings": list(validation.warnings),
@@ -90,7 +105,10 @@ class QueryOrchestrator:
                 )
             except ValueError as exc:
                 fallback_reason = "llm_validation_failed"
-                planner_observability = _planner_observability_from(self.llm_planner)
+                planner_observability = (
+                    _planner_observability_from_exception(exc)
+                    or _planner_observability_from(self.llm_planner)
+                )
                 planner_observability = _mark_last_planner_call(
                     planner_observability,
                     status="invalid",
@@ -103,7 +121,10 @@ class QueryOrchestrator:
                 }
             except Exception as exc:
                 fallback_reason = "llm_exception"
-                planner_observability = _planner_observability_from(self.llm_planner)
+                planner_observability = (
+                    _planner_observability_from_exception(exc)
+                    or _planner_observability_from(self.llm_planner)
+                )
                 planner_observability = _mark_last_planner_call(
                     planner_observability,
                     status="failed",
@@ -127,7 +148,12 @@ class QueryOrchestrator:
                 "metadata": {
                     **fallback.metadata,
                     "known_providers": list(known_query_providers(self.settings)),
-                    "executable_providers": list(executable_query_providers(self.settings)),
+                    "executable_providers": list(
+                        _runtime_executable_providers(
+                            self.settings,
+                            executable_providers,
+                        )
+                    ),
                     "fallback_reason": fallback_reason,
                     "quality_eligible": False,
                     "not_quality_reason": "planner_fallback_not_quality_run",
@@ -147,18 +173,58 @@ class QueryOrchestrator:
 def _call_llm_planner_with_observability(
     llm_planner: LLMQueryPlanner,
     query: str,
+    *,
+    executable_providers: tuple[str, ...] | None = None,
 ) -> tuple[QueryPlan, dict[str, Any]]:
     plan_with_observability = getattr(llm_planner, "plan_with_observability", None)
     if callable(plan_with_observability):
-        plan, observability = plan_with_observability(query)
+        if _call_accepts_keyword(plan_with_observability, "executable_providers"):
+            plan, observability = plan_with_observability(
+                query,
+                executable_providers=executable_providers,
+            )
+        else:
+            plan, observability = plan_with_observability(query)
         return plan, _planner_observability_from_payload(observability)
-    plan = llm_planner.plan(query)
+    plan_method = getattr(llm_planner, "plan")
+    if _call_accepts_keyword(plan_method, "executable_providers"):
+        plan = llm_planner.plan(query, executable_providers=executable_providers)
+    else:
+        plan = llm_planner.plan(query)
     return plan, _planner_observability_from(llm_planner)
+
+
+def _runtime_executable_providers(
+    settings: Settings,
+    executable_providers: tuple[str, ...] | None,
+) -> tuple[str, ...]:
+    return (
+        executable_providers
+        if executable_providers is not None
+        else executable_query_providers(settings)
+    )
+
+
+def _call_accepts_keyword(callable_obj: Any, keyword: str) -> bool:
+    try:
+        signature = inspect.signature(callable_obj)
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD or name == keyword
+        for name, parameter in signature.parameters.items()
+    )
 
 
 def _planner_observability_from(llm_planner: object) -> dict[str, Any]:
     return _planner_observability_from_payload(
         getattr(llm_planner, "last_observability", None)
+    )
+
+
+def _planner_observability_from_exception(exc: Exception) -> dict[str, Any]:
+    return _planner_observability_from_payload(
+        getattr(exc, "planner_observability", None)
     )
 
 

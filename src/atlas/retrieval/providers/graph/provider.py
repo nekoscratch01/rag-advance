@@ -11,6 +11,7 @@ from atlas.query_orchestrator.schema import QueryPlan
 from atlas.retrieval.contracts import ProviderResult, SourceAnchor
 from atlas.retrieval.models.candidate import Candidate
 from atlas.retrieval.models.retrieval_task import RetrievalTask
+from atlas.retrieval.providers.base import RetrievalContext, RetrievalProvider
 from atlas.retrieval.providers.graph.models import (
     DEFAULT_DEGREE_CAP,
     DEFAULT_MAX_HOPS,
@@ -30,14 +31,13 @@ from atlas.retrieval.providers.graph.evidence import (
     graph_source_anchor_payload,
     sanitize_graph_metadata,
 )
-from atlas.retrieval.providers.graph.postgres_store import PostgresGraphStore
 from atlas.retrieval.providers.graph.store import GraphStore
 
 
 SUPPORTED_PROVIDER_STATUSES = frozenset({"ready", "supported", "ok", "enabled"})
 
 
-class GraphProvider:
+class GraphProvider(RetrievalProvider):
     """V3 graph retrieval provider boundary.
 
     Phase 3 emits normal source-grounded Candidate objects when graph anchors can be
@@ -49,7 +49,7 @@ class GraphProvider:
     def __init__(
         self,
         *,
-        store: GraphStore | None = None,
+        store: GraphStore,
         default_graph_version: str = "default",
         degree_cap: int = DEFAULT_DEGREE_CAP,
         max_hops: int = DEFAULT_MAX_HOPS,
@@ -58,7 +58,7 @@ class GraphProvider:
         max_context_tokens: int | None = 6000,
         max_blocks: int | None = None,
     ) -> None:
-        self.store = store or PostgresGraphStore()
+        self.store = store
         self.default_graph_version = default_graph_version
         self.degree_cap = degree_cap
         self.max_hops = max_hops
@@ -173,6 +173,17 @@ class GraphProvider:
             latency_ms=latency_ms,
             reason=reason,
             trace=trace,
+        )
+
+    async def aretrieve_candidates(self, context: RetrievalContext) -> ProviderResult:
+        return self.retrieve_provider_result(
+            context.db,
+            query=context.query,
+            top_k=context.top_k,
+            filters=context.filters,
+            options=context.options,
+            query_plan=context.query_plan,
+            retrieval_tasks=context.retrieval_tasks,
         )
 
     def _run_task(

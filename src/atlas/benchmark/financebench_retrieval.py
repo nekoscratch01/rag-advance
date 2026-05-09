@@ -11,17 +11,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from atlas.backends import (
+    BackendBuildContext,
+    build_embedder,
+    build_reranker,
+    build_sparse_encoder,
+)
 from atlas.core.config import Settings
 from atlas.db.session import SessionLocal, init_db
-from atlas.embeddings.bge_local import LocalBGEEmbedder
-from atlas.embeddings.bm25_sparse import BM25SparseEncoder
 from atlas.eval.metrics import _evidence_matches, dense_retrieval_metrics, normalize_expected_evidence
 from atlas.eval.service import EvalCase, load_cases
 from atlas.retrieval.providers.text_hybrid.adapters.bm25 import BM25Retriever
 from atlas.retrieval.providers.text_hybrid.adapters.dense import DenseRetriever
 from atlas.retrieval.models.evidence import Evidence
 from atlas.retrieval.providers.text_hybrid.adapters.hybrid import HybridRetriever
-from atlas.retrieval.ranking.reranker import CrossEncoderReranker
 from atlas.vector.qdrant_client import get_qdrant_client
 
 
@@ -108,12 +111,13 @@ def run_retrieval_benchmark(
 ) -> RetrievalBenchmark:
     init_db()
     settings = Settings()
+    backend_context = BackendBuildContext(settings=settings)
     qdrant = get_qdrant_client()
-    embedder = LocalBGEEmbedder(settings)
-    sparse_encoder = BM25SparseEncoder(settings)
+    embedder = build_embedder(settings.embedding_backend, backend_context)
+    sparse_encoder = build_sparse_encoder(settings.sparse_backend, backend_context)
     dense = DenseRetriever(settings=settings, embedder=embedder, qdrant=qdrant)
     bm25 = BM25Retriever(settings=settings, sparse_encoder=sparse_encoder, qdrant=qdrant)
-    reranker = CrossEncoderReranker(settings.reranker_model)
+    reranker = build_reranker(settings.reranker_backend, backend_context)
     retrievers = {
         "dense_only": dense,
         "bm25_only": bm25,

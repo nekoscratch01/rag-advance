@@ -32,19 +32,19 @@ ProviderRouter / QueryRuntime contract-level integration
 V3.0 的边界：
 
 ```text
-默认 V1 runtime 仍是 hybrid-only。
-GraphProvider 是 opt-in walking skeleton，不声明检索质量或答案质量提升。
+默认 runtime 注册 hybrid + graph 两个可执行 provider。
+GraphProvider 是 planner-selected walking skeleton，不声明检索质量或答案质量提升。
 global / community / DRIFT 仍是 V3.1+ 设计，不是 V3.0 可执行能力。
 Graph-only text、summary、description 不能作为 Evidence 文本。
 ```
 
-opt-in 运行口径：
+默认运行口径：
 
 ```bash
 ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid,graph
 ```
 
-Phase 5 已把 opt-in 装配接入 dependencies / QueryRuntime：只有显式配置 `hybrid,graph` 时才注册 GraphProvider；默认产品路径仍保持 V1 hybrid-only。
+如需回到 V1 baseline，可显式设置 `ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid`。Phase 6 已把 GraphProvider 从 opt-in 提升为默认可执行 provider；是否实际调用 graph 仍由 QueryPlan 决定。
 
 ---
 

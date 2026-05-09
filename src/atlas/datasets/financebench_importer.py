@@ -10,6 +10,7 @@ from qdrant_client import QdrantClient, models
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
+from atlas.backends import BackendBuildContext, build_sparse_encoder
 from atlas.core.config import Settings, bm25_sparse_enabled
 from atlas.db.models import Chunk, Document, ParentBlock
 from atlas.embeddings.base import Embedder
@@ -189,7 +190,10 @@ def _upsert_child_vectors(
     vector_count = 0
     sparse_enabled = bm25_sparse_enabled(settings)
     if sparse_enabled and sparse_encoder is None:
-        sparse_encoder = BM25SparseEncoder(settings)
+        sparse_encoder = build_sparse_encoder(
+            settings.sparse_backend,
+            BackendBuildContext(settings=settings),
+        )
 
     for batch in _batched(children, max(1, batch_size)):
         texts = [_clean_text(item.get("text")) for item in batch]

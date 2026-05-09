@@ -16,6 +16,7 @@ from atlas.retrieval.contracts import ProviderResult, source_anchor_from_candida
 from atlas.retrieval.models.candidate import Candidate
 from atlas.retrieval.models.evidence import Evidence
 from atlas.retrieval.models.retrieval_task import RetrievalTask
+from atlas.retrieval.providers.base import RetrievalContext, RetrievalProvider
 from atlas.retrieval.providers.text_hybrid.adapters.hybrid import HybridRetriever
 from atlas.retrieval.providers.text_hybrid.adapters.mode_switching import ModeSwitchingRetriever
 from atlas.retrieval.ranking.fusion import DEFAULT_RRF_K, WeightedRRFInput, weighted_rrf_fuse
@@ -49,7 +50,7 @@ class EvidenceBuildResult:
     evidence_pack: Any | None
 
 
-class TextHybridProvider:
+class TextHybridProvider(RetrievalProvider):
     """Provider-local V1 text retrieval boundary with dense, lexical, and textual table lanes."""
 
     def __init__(
@@ -70,7 +71,8 @@ class TextHybridProvider:
         lexical_top_k: int | None = None,
         max_context_tokens: int | None = None,
     ) -> None:
-        self.provider_name = TEXT_HYBRID_PROVIDER
+        self.provider_name = "hybrid"
+        self.implementation_name = TEXT_HYBRID_PROVIDER
         self.dense_retriever = dense_retriever
         self.bm25_retriever = bm25_retriever
         self.rrf_k = rrf_k
@@ -185,6 +187,17 @@ class TextHybridProvider:
             latency_ms=run.latency_ms,
             reason=None,
             trace=run.trace,
+        )
+
+    async def aretrieve_candidates(self, context: RetrievalContext) -> ProviderResult:
+        return self.retrieve_provider_result(
+            context.db,
+            query=context.query,
+            top_k=context.top_k,
+            filters=context.filters,
+            options=context.options,
+            query_plan=context.query_plan,
+            retrieval_tasks=context.retrieval_tasks,
         )
 
     def _run_with_plan(
@@ -427,7 +440,7 @@ class TextHybridProvider:
 
     def _lane_top_k(self, lane_name: str, task_top_k: int, requested_top_k: int) -> int:
         configured = self.dense_top_k if lane_name == "dense" else self.lexical_top_k
-        return max(1, configured or task_top_k or requested_top_k)
+        return max(1, configured or 0, task_top_k or 0, requested_top_k or 0)
 
     def _reranker_enabled(self, options: dict[str, Any]) -> bool:
         if "reranker_enabled" in options:

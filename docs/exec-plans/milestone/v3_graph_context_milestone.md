@@ -1,6 +1,6 @@
 # V3.0 里程碑：Atlas GraphProvider Walking Skeleton
 
-更新时间：2026-05-07
+更新时间：2026-05-08
 
 ## 版本契约
 
@@ -24,8 +24,8 @@ docs/exec-plans/version-arch/v3_graph_provider_arch.md
 
 ```text
 状态：V3.0 walking skeleton 已实现
-默认：V1 runtime 仍是 hybrid-only
-启用：graph 是 opt-in provider，配置口径为 ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid,graph
+默认：runtime 注册 hybrid + graph 两个可执行 provider
+启用：graph 由 QueryPlan 选择调用；不对所有 query 强制运行
 证据：证明 provider contract、Postgres grounding pivot、trace auditability
 非目标：不证明 retrieval / answer quality lift
 ```
@@ -41,15 +41,40 @@ de650e9 Add graph provider skeleton
 1b40e67 Add graph evidence grounding
 ```
 
-Phase 5 已完成 V3.0 runtime opt-in 装配，最终实现事实：
+Phase 5 完成 V3.0 runtime opt-in 装配。Phase 6 将 graph 提升为默认可执行 provider，最终实现事实：
 
 ```text
 IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid", "graph")
-get_graph_provider() -> GraphProvider(PostgresGraphStore)
-get_provider_router() 仅在 executable providers 包含 graph 时注册 GraphProvider
+Settings.query_runtime_executable_providers = "hybrid,graph"
+executable_query_providers 校验 requested 是否 known/registered；unknown/reserved 直接配置错误，sql 保持 non-executable placeholder
+get_graph_provider() -> provider_registry.build("graph", ProviderBuildContext(...))
+graph store 只能经 graph_store_backend / build_graph_store() 注入
+get_provider_router() 按 executable providers 从 provider registry 注册 TextHybridProvider + GraphProvider
 QueryRuntime 无显式 provider_router 时可按配置 auto-wire GraphProvider
 trace_logger 能把 graph evidence 记录为 retriever_type="graph"
 ```
+
+2026-05-08 补做 provider industrialization refactor：V3 不再只是“能注册一个
+GraphProvider”，而是把 graph 固定为 provider 架构里的一个一等路由分支。这个 refactor
+是 V4 structured provider 前置债务清理，不代表 SQL / structured data 已经实现。
+
+落地边界：
+
+```text
+RetrievalProvider ABC 强制 provider 继承
+ComponentRegistry / provider_registry 负责 provider factory 注册
+TextHybridProvider / GraphProvider 显式继承 RetrievalProvider
+SQL 保持 known semantic provider，但 runtime registration 被拒绝
+reserved internal lanes 不能冒充 provider
+ProviderRouter.aretrieve() 在 session_factory 存在时并发调度 hybrid/graph
+CandidateAdapter / CandidateFusion 把 provider output 收口到统一 candidate window
+global reranker 在 hybrid + graph 统一候选上执行
+EvidenceBuilder 只消费全局排序后的 candidates
+```
+
+2026-05-09 补做 V4 preflight industrialization：backend registry、typed candidate
+policy、ingestion registry 和 QueryRuntime async facade 已落地。该阶段仍不实现
+SQLProvider；它只是让 SQLProvider 后续能通过 typed candidate / Evidence Kernel 接入。
 
 ## 已实现产物
 
@@ -75,7 +100,18 @@ GraphStore Protocol
 GraphCache Protocol
 NoOpGraphCache
 SourceAnchor.graph_ids
-ProviderResult.evidence / evidence_pack
+ProviderResult.candidates
+ProviderResult.evidence / evidence_pack 仅作为兼容 fallback，不再是主输出边界
+```
+
+Provider industrialization 新增/纳入：
+
+```text
+src/atlas/core/registry.py
+src/atlas/retrieval/providers/base.py
+src/atlas/retrieval/providers/registry.py
+src/atlas/retrieval/candidate_adapter.py
+src/atlas/retrieval/candidate_fusion.py
 ```
 
 ### Storage / Loader
@@ -132,10 +168,9 @@ Graph-only `summary`、`description`、`text_span`、`path_text` 只可作为审
 V3.0 不新增独立 `/v3/graph/*` HTTP API。Graph 通过统一 provider contract 接入：
 
 ```text
-GraphProvider.retrieve_provider_result(...) -> ProviderResult
+GraphProvider.aretrieve_candidates(ctx: RetrievalContext) -> ProviderResult
+GraphProvider.retrieve_provider_result(...) -> legacy sync wrapper
 ProviderResult.candidates -> tuple[Candidate, ...]
-ProviderResult.evidence -> tuple[Evidence, ...]
-ProviderResult.evidence_pack -> EvidencePack | None
 ProviderResult.trace -> graph audit payload
 ```
 
@@ -165,14 +200,18 @@ DEFAULT_MAX_SOURCE_CHUNKS_PER_RESULT = 3
 
 ## 测试与验证
 
-最新可引用的 V3.0 Phase 5 实现验证：
+最新可引用的 V3.0 runtime refactor 验证：
 
 ```text
-pytest -q: 126 passed, 2 warnings
-Phase 5 targeted tests: 39 passed, 2 warnings
+python -m compileall -q src/atlas scripts
+pytest -q: 181 passed, 2 warnings
+targeted provider/router/planner tests: 112 passed, 2 warnings
+git diff --check
 ```
 
-这代表 V3.0 Phase 5 implementation verification；仍只证明 contract、grounding 和 opt-in runtime 装配，不证明检索质量或答案质量提升。
+这代表 V3.0 runtime + provider industrialization verification。当前仍只证明
+contract、grounding、runtime 装配、parallel router、candidate fusion/global rerank
+链路能跑通，不证明检索质量或答案质量提升。
 
 覆盖重点：
 
@@ -199,9 +238,16 @@ grounded Candidate uses chunks.text
 Evidence uses hydrated chunk text, not graph-only text
 unsafe graph summary/description/path_text/text_span not prompt-visible
 ProviderRouter can execute registered graph provider and serialize trace without candidate text
-executable_query_providers 默认只返回 hybrid，opt-in 时返回 hybrid/graph，并过滤 sql
-dependencies 只在 opt-in 时注册 GraphProvider
-QueryRuntime 可按配置 auto-wire GraphProvider
+executable_query_providers 默认返回 hybrid/graph，并过滤 sql
+ProviderRouter 拒绝把 sql 或 dense/bm25/table 等 internal lane 注册为 provider
+ProviderRouter 并发执行 hybrid/graph，provider 失败时保留 failed ProviderResult 和 partial trace
+CandidateFusion 将 hybrid/graph candidates 合并后统一送入 global reranker
+同 chunk / 同 parent 去重时保留跨 provider provenance 和 graph source_anchor
+API/details 中 provider failure trace 会 scrub error_message/planned_text
+cache schema 升级到 atlas-query-cache-v3，并纳入 executable providers / global rerank policy
+dependencies 默认注册 GraphProvider；显式 hybrid-only 配置可回到 V1 baseline
+QueryRuntime 默认 auto-wire GraphProvider
+默认注册 graph 时，hybrid-only QueryPlan 不会调用 GraphProvider
 ready graph task 缺少注册 provider 时返回 provider_not_registered:graph
 graph evidence trace event retriever_type = graph
 ```
@@ -217,7 +263,7 @@ FinanceBench 指标提升
 global/community/DRIFT search 已可用
 Graph summary 可以作为 citation
 Graph relation 是 SQL-like exact fact
-默认 V1 query path 被 graph 替换
+默认 runtime 变成 graph-first 或所有 query 强制跑 graph
 ```
 
 SQL 仍是未来 structured EvidenceBlock / structured fact provider，不绕过 Evidence Kernel，也不作为 graph provider 的替代路径。
@@ -233,6 +279,12 @@ SQL 仍是未来 structured EvidenceBlock / structured fact provider，不绕过
 没有独立 graph debug HTTP API。
 GraphCache 只有 Protocol 和 NoOpGraphCache，没有真实后端。
 Graph fixture 是测试/开发入口，不是持续 ingestion pipeline。
+没有 full native AsyncSession repository 主路径迁移；当前 `QueryRuntime.arun()`
+是 async facade，DB repository / graph store 主体仍通过 sync runtime thread offload 过渡。
+backend registry / ingestion registry 已有 V4 preflight 基础；外部 plugin discovery、
+FinanceBench importer 复用 ingestion contract、structured extraction/indexing 仍未完成。
+没有 SQLProvider / Text-to-SQL / structured table-cell storage。
+structured candidate policy 已有 pinned/supporting 基础，但真实 cell provenance 仍待 V4 SQLProvider 落地。
 ```
 
 ## 下一步

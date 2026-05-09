@@ -61,6 +61,16 @@ def test_retrieval_unit_rejects_legacy_retriever_names() -> None:
         )
 
 
+def test_retrieval_unit_rejects_internal_lane_as_provider() -> None:
+    with pytest.raises(ValidationError, match="provider_is_internal_lane:dense"):
+        RetrievalUnit(
+            unit_id="u0",
+            purpose="original",
+            text="3M FY2018 capex",
+            provider="dense",
+        )
+
+
 def test_retrieval_unit_rejects_compound_provider_units() -> None:
     with pytest.raises(ValidationError, match="unit_proposals"):
         RetrievalUnit(
@@ -105,7 +115,7 @@ def test_sql_provider_task_is_represented_but_skipped() -> None:
 
     assert task.provider == "sql"
     assert task.provider_status == "skipped_non_executable"
-    assert task.unsupported_reason == "provider_not_executable_in_v1:sql"
+    assert task.unsupported_reason == "provider_not_executable:sql"
     assert task.internal_lanes == ()
 
 

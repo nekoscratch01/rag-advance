@@ -7,6 +7,9 @@ from atlas.core.ids import new_id
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
 
 
+NON_EXECUTABLE_PROVIDER_NAMES = frozenset({"sql"})
+
+
 @dataclass(frozen=True)
 class RetrievalTask:
     task_id: str
@@ -32,7 +35,7 @@ class RetrievalTask:
         unit: RetrievalUnit,
         *,
         task_id: str | None = None,
-        executable_providers: tuple[str, ...] = ("hybrid",),
+        executable_providers: tuple[str, ...] = ("hybrid", "graph"),
     ) -> RetrievalTask:
         metadata = dict(getattr(unit, "metadata", {}) or {})
         provider = _unit_provider(unit)
@@ -79,7 +82,7 @@ class RetrievalTask:
 def tasks_from_plan(
     plan: QueryPlan,
     *,
-    executable_providers: tuple[str, ...] = ("hybrid",),
+    executable_providers: tuple[str, ...] = ("hybrid", "graph"),
 ) -> list[RetrievalTask]:
     return [
         RetrievalTask.from_unit(
@@ -162,7 +165,7 @@ def _provider_status(
     provider: str,
     executable_providers: tuple[str, ...],
 ) -> str:
-    if provider not in executable_providers:
+    if provider in NON_EXECUTABLE_PROVIDER_NAMES or provider not in executable_providers:
         return "skipped_non_executable"
     value = getattr(unit, "provider_status", None) or metadata.get("provider_status")
     if value:
@@ -178,8 +181,8 @@ def _unsupported_reason(
     provider_status: str,
     executable_providers: tuple[str, ...],
 ) -> str | None:
-    if provider not in executable_providers:
-        return f"provider_not_executable_in_v1:{provider}"
+    if provider in NON_EXECUTABLE_PROVIDER_NAMES or provider not in executable_providers:
+        return f"provider_not_executable:{provider}"
     value = getattr(unit, "unsupported_reason", None) or metadata.get("unsupported_reason")
     if value:
         return str(value)

@@ -116,8 +116,8 @@ budget
 实现策略是 LLM structured planner + deterministic fallback + validator。
 没有 `OPENAI_API_KEY` 时 fallback 仍可用；有 key 时默认 planner model 为 `gpt-5-nano`。
 V1 planner prompt 使用 `known_providers=["hybrid","sql","graph"]` 表达语义意图。
-V1 runtime 使用 `executable_providers=["hybrid"]` 执行当前能力。
-`sql` / `graph` 在 plan 中合法，但会在 V1 execution 中生成 `skipped_non_executable` ProviderResult。
+V1 baseline 使用 `executable_providers=["hybrid"]` 执行当时能力。
+当前 V3.0 后默认 runtime 使用 `executable_providers=["hybrid","graph"]`；`sql` 在 plan 中合法但会生成 `skipped_non_executable` ProviderResult，`graph` 只有被 QueryPlan 选中时才执行。
 
 ### 2. RetrievalTask 固定 provider 输入
 
@@ -140,20 +140,36 @@ unit_weight
 本阶段新增 runtime 收口层：
 
 ```text
+RetrievalProvider ABC
+ComponentRegistry / provider_registry
 ProviderRouter
 ProviderResult
 SourceAnchor
+CandidateAdapter
+CandidateFusion
 ```
 
 实际行为：
 
 ```text
-hybrid task -> TextHybridProvider -> evidence
+hybrid task -> TextHybridProvider -> provider-local candidates
 sql task    -> skipped_non_executable -> trace only
-graph task  -> skipped_non_executable -> trace only
+graph task  -> V3.0 GraphProvider local/path -> source-grounded candidates
+CandidateFusion -> cross-provider dedupe/provenance/source_anchor merge
+global reranker -> unified candidate window
+EvidenceBuilder -> global EvidencePack / Evidence
 ```
 
 默认不做 `hybrid_backfill`，避免把 SQL/Graph 语义意图伪装成 hybrid。
+
+注册与扩展边界：
+
+```text
+provider 必须显式继承 RetrievalProvider ABC。
+provider factory 通过 provider_registry 构建，默认内置 hybrid / graph。
+sql 是 known semantic provider，但注册 runtime provider 会失败。
+dense / bm25 / table / section / metric_alias 是 TextHybridProvider internal lanes，不允许注册为 provider。
+```
 
 ### 2.2 LLM client adapter
 
@@ -167,7 +183,7 @@ llm.clients.OpenAIClient
 任务层只描述 planner / answer generation；底层 provider 替换、mock 测试、usage/latency trace 由 client adapter 承担。
 
 这让 provider 不再只面对一个字符串，而是面对可解释的检索任务。
-V1 live runtime 只执行 `provider="hybrid"`；`sql` / `graph` 只保留为未来 provider contract，不在 V1 中执行。
+当前默认 runtime 执行 `provider="hybrid"` 与被 QueryPlan 选中的 `provider="graph"`；`sql` 仍只保留为未来 provider contract。
 
 ### 3. TextHybridProvider 成为 V1 主检索边界
 
@@ -401,9 +417,9 @@ legacy retriever shim 改为显式窄导出，避免 import * 扩大旧导出面
 边界保持不变：
 
 ```text
-不新增 SQLProvider / GraphProvider stub
-sql / graph skipped 是 ProviderRouter contract，不是 provider stub 行为
-V1 runtime 仍只执行 hybrid
+不新增 SQLProvider；GraphProvider 是 V3.0 walking skeleton，不是 stub
+sql skipped 是 ProviderRouter contract，不是 provider stub 行为
+V1 baseline 仍只执行 hybrid；当前默认 Atlas runtime 已注册 V3.0 GraphProvider
 ```
 
 ## 尚未完成
@@ -413,7 +429,7 @@ V1 runtime 仍只执行 hybrid
 contextual chunk enrichment 仍未作为 ingestion 默认产物
 table-aware metadata 仍是 textual lane，不是结构化 table store
 SQLProvider / financial_facts / cell provenance 推迟到 V4
-GraphProvider 推迟到 V3
+GraphProvider retrieval eval 仍未完成
 Redis Queue / worker pool 属于 V2 Research Runtime，不属于 V1
 legacy details_json / answers payload raw LLM I/O scrub/backfill migration 尚未实现
 ```

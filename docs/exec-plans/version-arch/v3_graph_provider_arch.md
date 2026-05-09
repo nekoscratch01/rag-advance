@@ -1,14 +1,14 @@
 # V3.0 实际架构：Atlas GraphProvider Walking Skeleton
 
-更新时间：2026-05-07
+更新时间：2026-05-08
 
 本文记录 V3.0 GraphProvider 的真实实现。Design 文档说明目标；本文说明已经落地的模块、数据流、DB 表、trace payload 和边界。
 
 核心事实：
 
 ```text
-V3.0 已实现 opt-in GraphProvider walking skeleton。
-默认 V1 runtime 仍是 hybrid-only。
+V3.0 已实现 GraphProvider walking skeleton。
+默认 Atlas runtime 注册 hybrid + graph 两个可执行 provider。
 GraphProvider 只支持 local / path。
 GraphProvider 不直接把 graph text 变成 evidence。
 Evidence text 必须来自 Postgres chunks.text。
@@ -456,42 +456,86 @@ router 行为：
 ```text
 按 RetrievalTask.provider group。
 task.provider_status = skipped_non_executable 时写 skipped ProviderResult。
-已注册 provider 执行 retrieve_provider_result。
-ProviderResult.evidence 汇总进入 QueryRuntime。
+provider 必须显式继承 RetrievalProvider ABC。
+sql 是 known semantic provider，但 runtime 注册 sql 会被拒绝。
+已注册 provider 输出 ProviderResult.candidates。
+CandidateFusion 跨 provider 去重、保留 source_anchor/provenance，并生成全局 candidate window。
+global reranker 在 hybrid + graph 的统一 candidate window 上运行。
+EvidenceBuilder 只消费全局排序后的 candidates。
+provider 失败会写 failed ProviderResult；有成功 sibling 时保留 partial trace 和成功 evidence。
 provider_results 和 provider_router_trace 写入 trace。
 ```
 
-默认 V1 仍是：
+Provider 工业化边界：
 
 ```text
-ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid
+src/atlas/retrieval/providers/base.py
+  RetrievalProvider(ABC)
+  aretrieve_candidates(ctx: RetrievalContext) -> ProviderResult
+  retrieve_provider_result(...) 是 legacy sync wrapper
+
+src/atlas/core/registry.py
+  ComponentRegistry
+
+src/atlas/retrieval/providers/registry.py
+  provider_registry
+  built-ins: hybrid / graph
+  SQL 不注册；V4 前只保留 semantic plan / skipped execution 语义
+```
+
+Router 注册规则现在是强约束，不是约定：
+
+```text
+non RetrievalProvider instance -> TypeError
+sql provider registration -> non_executable_provider_registered:sql
+dense/bm25/sparse/table/section/metric_alias registration -> internal_lane_registered_as_provider
+unknown provider registration -> unknown_provider_registered:{provider}
+```
+
+并发执行规则：
+
+```text
+session_factory 存在时，ProviderRouter.aretrieve() 使用 asyncio.gather 调度 provider。
+每个 provider 在 worker thread 内创建并关闭自己的 Session。
+global fusion / rerank / EvidenceBuilder 在 router assembly 阶段统一执行。
+session_factory 为空时保留 retrieve() legacy sync path，用于 CLI / 旧测试过渡。
+```
+
+默认 runtime 现在是：
+
+```text
+ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid,graph
 IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid", "graph")
 ```
 
-V3.0 graph opt-in 口径：
+如需回到 V1 baseline，可显式设为：
 
 ```bash
-ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid,graph
+ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid
 ```
 
-Phase 5 已接入 opt-in 装配：
+Phase 5 已接入 opt-in 装配；Phase 6 将 graph 提升为默认可执行 provider：
 
 ```text
 src/atlas/api/dependencies.py
-  get_graph_provider() -> GraphProvider(PostgresGraphStore, max_context_tokens=settings.max_context_tokens)
-  get_provider_router() 只在 executable_query_providers(settings) 包含 "graph" 时注册 graph
+  get_graph_provider() -> build_provider("graph", ProviderBuildContext(...))
+  graph store 通过 graph_store_backend / build_graph_store() 注入，不在 GraphProvider 内直接构造
+  get_provider_router() 默认从 provider registry 注册 hybrid + graph；显式 hybrid-only 时不注册 graph
 
 src/atlas/query_runtime/service.py
-  QueryRuntime 无显式 provider_router 时，按 settings auto-wire GraphProvider
+  QueryRuntime 无显式 provider_router 时，通过 backend/provider registry auto-wire GraphProvider
 
 src/atlas/retrieval/router.py
   ready task 但 provider 未注册时返回 provider_not_registered:{provider}
+  sql provider 注册返回 non_executable_provider_registered:sql
+  session_factory 存在时并发执行 provider，每个 provider 在 worker thread 内独立创建/关闭 Session
+  session_factory 为空时只保留 legacy sync wrapper，不作为 async 主路径
 
 src/atlas/query_runtime/trace_logger.py
   graph evidence 记录为 retriever_type="graph"
 ```
 
-无论是否 opt-in，默认 runtime 不变成 graph-first；graph 只在显式 `hybrid,graph` 时进入 executable provider set。
+默认 runtime 不变成 graph-first；graph 只是进入 executable provider set，是否调用仍由 QueryPlan 的 graph retrieval unit 决定。
 
 ---
 
@@ -566,11 +610,12 @@ NoOpGraphCache
 
 ## 10. Tests
 
-最新可引用的 V3.0 Phase 5 实现验证：
+最新可引用的 V3.0 runtime + provider industrialization 验证：
 
 ```text
-pytest -q: 126 passed, 2 warnings
-Phase 5 targeted tests: 39 passed, 2 warnings
+python -m compileall -q src/atlas scripts
+pytest -q: 181 passed, 2 warnings
+targeted provider/router/planner tests: 112 passed, 2 warnings
 ```
 
 重点测试文件：
@@ -602,10 +647,15 @@ Evidence text = chunks.text
 graph-only toxic text does not enter prompt / trace / evidence metadata
 zero token budget drops graph evidence through EvidencePack
 ProviderRouter can execute a registered graph provider
-default executable providers remain hybrid-only
-opt-in executable providers include graph and still filter sql
-dependencies register GraphProvider only when opted in
-QueryRuntime auto-wires GraphProvider when explicitly executable
+default executable providers are hybrid + graph and still filter sql
+ProviderRouter rejects non-ABC providers, sql registration, and internal lane registration
+ProviderRouter runs hybrid/graph concurrently when session_factory is available
+ProviderRouter records failed ProviderResult and keeps successful sibling evidence on partial failure
+CandidateFusion merges hybrid/graph candidates before global rerank
+same chunk / same parent dedupe preserves provider provenance and graph source anchors
+dependencies register GraphProvider by default
+QueryRuntime auto-wires GraphProvider by default
+registered GraphProvider is not called for a hybrid-only QueryPlan
 ready graph task without registered provider returns provider_not_registered:graph
 graph evidence persists retrieval events as retriever_type="graph"
 ```
@@ -625,16 +675,16 @@ Graph 提升了生成式答案可靠性。
 global/community/DRIFT 已实现。
 Graph summary 可以直接引用。
 Graph relation 可以作为 SQL-like exact fact。
-默认 V1 runtime 改成 graph 路径。
-SQL 已经实现。
+默认 Atlas runtime 改成 graph-first 或强制所有 query 跑 graph。
+SQLProvider / structured data runtime 已经实现。
 ```
 
 准确说法是：
 
 ```text
 V3.0 证明 graph provider contract 可以被路由、可以从 Postgres graph object pivot 到 chunks.text、可以留下可审计 trace。
-默认 Atlas runtime 仍走 V1 hybrid provider。
-GraphProvider 是 opt-in walking skeleton。
+默认 Atlas runtime 注册 hybrid + graph，QueryPlan 决定是否调用 graph。
+GraphProvider 是 planner-selected walking skeleton。
 ```
 
 ---

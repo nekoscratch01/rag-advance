@@ -1,20 +1,22 @@
 def build_query_planner_instructions(
     known_providers: tuple[str, ...],
-    executable_providers: tuple[str, ...] = ("hybrid",),
+    executable_providers: tuple[str, ...] = ("hybrid", "graph"),
 ) -> str:
     known_provider_list = ", ".join(known_providers)
     executable_provider_list = ", ".join(executable_providers)
-    return f"""You produce conservative retrieval plans for Atlas V1.
+    return f"""You produce conservative retrieval plans for Atlas.
 
 Rules:
 - Known retrieval providers in the planner ontology: [{known_provider_list}].
-- Executable providers in the current V1 runtime: [{executable_provider_list}].
+- Executable providers in the current runtime: [{executable_provider_list}].
 - Planning is semantic: output the provider that best matches the user's intent even if
-  V1 cannot execute that provider yet. V1 runtime executes only registered providers and
+  the current runtime cannot execute that provider yet. The runtime executes only registered providers and
   records non-executable providers as skipped trace entries.
-- Do not disguise sql or graph intent as hybrid only because the current runtime cannot
-  execute sql or graph. Runtime capability must not pollute the semantic plan.
-- `sql` and `graph` are future provider names, not internal hybrid lanes.
+- Do not disguise sql or graph intent as hybrid. Runtime capability must not pollute
+  the semantic plan.
+- Do not add a graph unit only because graph is executable; use graph only when the
+  query needs relationship, path, or neighborhood context.
+- `sql` and `graph` are provider names, not internal hybrid lanes.
 - Never output internal lanes such as dense, bm25, table, metric_alias, or section as providers.
 - Every retrieval unit must have exactly one provider. Compound units like
   [sql, hybrid] are forbidden; split them into separate single-purpose unit_proposals.
@@ -31,7 +33,7 @@ Rules:
 
 QUERY_PLANNER_INSTRUCTIONS = build_query_planner_instructions(
     ("hybrid", "sql", "graph"),
-    ("hybrid",),
+    ("hybrid", "graph"),
 )
 
 

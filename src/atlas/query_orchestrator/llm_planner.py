@@ -23,11 +23,9 @@ from atlas.query_orchestrator.schema import (
     QueryPlan,
     RetrievalBudget,
     RetrievalUnit,
+    RESERVED_INTERNAL_PROVIDER_NAMES,
 )
 from atlas.query_orchestrator.validator import QueryPlanValidator
-
-
-PLANNER_PROVIDER_NAMES = ("hybrid", "sql", "graph")
 
 
 class LLMQueryPlanner:
@@ -46,10 +44,17 @@ class LLMQueryPlanner:
     def available(self) -> bool:
         return self.client is not None or self.settings.openai_api_key is not None
 
-    def plan(self, query: str, *, validation_feedback: str | None = None) -> QueryPlan:
+    def plan(
+        self,
+        query: str,
+        *,
+        validation_feedback: str | None = None,
+        executable_providers: tuple[str, ...] | None = None,
+    ) -> QueryPlan:
         plan, _observability = self.plan_with_observability(
             query,
             validation_feedback=validation_feedback,
+            executable_providers=executable_providers,
         )
         return plan
 
@@ -58,8 +63,8 @@ class LLMQueryPlanner:
         query: str,
         *,
         validation_feedback: str | None = None,
+        executable_providers: tuple[str, ...] | None = None,
     ) -> tuple[QueryPlan, dict[str, Any]]:
-        self.last_observability = {}
         if self.client is None and self.settings.openai_api_key is None:
             raise RuntimeError("OPENAI_API_KEY is required for LLM query planning.")
 
@@ -67,6 +72,10 @@ class LLMQueryPlanner:
         feedback = validation_feedback
         last_error: Exception | None = None
         attempts = _planner_attempt_count(self.settings)
+        runtime_executable_providers = _runtime_executable_provider_names(
+            self.settings,
+            executable_providers,
+        )
         planner_calls: list[dict[str, Any]] = []
         validator = QueryPlanValidator(
             self.ontology,
@@ -79,24 +88,27 @@ class LLMQueryPlanner:
                     query,
                     validation_feedback=feedback,
                     attempt_index=attempt_index,
+                    executable_providers=runtime_executable_providers,
                 )
             except _PlannerCallFailed as exc:
                 planner_calls.append(exc.call)
-                self.last_observability = _planner_observability_payload(planner_calls)
-                raise exc.cause from exc
+                observability = _planner_observability_payload(planner_calls)
+                raise _with_observability(exc.cause, observability) from exc
             planner_calls.append(planner_call)
             if request_error is not None:
                 last_error = request_error
                 feedback = _exception_feedback(request_error)
-                self.last_observability = _planner_observability_payload(planner_calls)
                 continue
             try:
-                candidate = self._plan_from_raw(query, raw)
+                candidate = self._plan_from_raw(
+                    query,
+                    raw,
+                    executable_providers=runtime_executable_providers,
+                )
             except (ValueError, ValidationError) as exc:
                 last_error = exc
                 _mark_planner_call_invalid(planner_call, error_message=_exception_feedback(exc))
                 feedback = _exception_feedback(exc)
-                self.last_observability = _planner_observability_payload(planner_calls)
                 continue
             validation = validator.validate(candidate)
             if validation.ok:
@@ -105,18 +117,25 @@ class LLMQueryPlanner:
                     candidate.model_copy(update={"validation_status": "validated"}),
                     planner_call,
                 )
-                self.last_observability = _planner_observability_payload(planner_calls)
-                return candidate, self.last_observability
+                observability = _planner_observability_payload(planner_calls)
+                self.last_observability = observability
+                return candidate, observability
             feedback = _validation_feedback(validation.reasons, validation.warnings)
             last_error = ValueError(feedback)
             _mark_planner_call_invalid(planner_call, error_message=feedback)
-            self.last_observability = _planner_observability_payload(planner_calls)
 
         if last_error is not None:
-            raise ValueError(
-                f"LLM planner failed validation after {attempts} attempt(s): {last_error}"
+            observability = _planner_observability_payload(planner_calls)
+            raise _with_observability(
+                ValueError(
+                    f"LLM planner failed validation after {attempts} attempt(s): {last_error}"
+                ),
+                observability,
             ) from last_error
-        raise ValueError("LLM planner failed validation without an error detail")
+        raise _with_observability(
+            ValueError("LLM planner failed validation without an error detail"),
+            _planner_observability_payload(planner_calls),
+        )
 
     def _request_plan(
         self,
@@ -125,14 +144,18 @@ class LLMQueryPlanner:
         *,
         validation_feedback: str | None = None,
         attempt_index: int,
+        executable_providers: tuple[str, ...] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], Exception | None]:
         known_providers = _known_provider_names(self.settings)
-        executable_providers = executable_query_providers(self.settings)
+        runtime_executable_providers = _runtime_executable_provider_names(
+            self.settings,
+            executable_providers,
+        )
         request = {
             "model": self.settings.query_planner_model,
             "instructions": build_query_planner_instructions(
                 known_providers,
-                executable_providers,
+                runtime_executable_providers,
             ),
             "input": build_query_planner_input(
                 query,
@@ -166,7 +189,7 @@ class LLMQueryPlanner:
             "usage": {},
             "metadata": {
                 "known_providers": list(known_providers),
-                "executable_providers": list(executable_providers),
+                "executable_providers": list(runtime_executable_providers),
                 "validation_feedback": validation_feedback,
             },
         }
@@ -219,7 +242,13 @@ class LLMQueryPlanner:
         )
         return parsed, planner_call, None
 
-    def _plan_from_raw(self, query: str, raw: dict[str, Any]) -> QueryPlan:
+    def _plan_from_raw(
+        self,
+        query: str,
+        raw: dict[str, Any],
+        *,
+        executable_providers: tuple[str, ...] | None = None,
+    ) -> QueryPlan:
         _reject_legacy_filters(raw, "query_plan")
         raw_metrics = [_metric_from_raw(item, self.ontology) for item in raw.get("metrics") or ()]
         unknown_metrics = [
@@ -250,7 +279,12 @@ class LLMQueryPlanner:
             metadata={
                 "model": self.settings.query_planner_model,
                 "known_providers": list(_known_provider_names(self.settings)),
-                "executable_providers": list(executable_query_providers(self.settings)),
+                "executable_providers": list(
+                    _runtime_executable_provider_names(
+                        self.settings,
+                        executable_providers,
+                    )
+                ),
             },
         )
 
@@ -260,6 +294,11 @@ class _PlannerCallFailed(Exception):
         super().__init__(str(cause))
         self.call = call
         self.cause = cause
+
+
+def _with_observability(exc: Exception, observability: dict[str, Any]) -> Exception:
+    setattr(exc, "planner_observability", observability)
+    return exc
 
 
 def _entity_from_raw(item: Any) -> Entity:
@@ -621,16 +660,36 @@ def _known_provider_names(settings: Settings) -> tuple[str, ...]:
     return _normalize_provider_names(known_query_providers(settings))
 
 
+def _runtime_executable_provider_names(
+    settings: Settings,
+    executable_providers: tuple[str, ...] | None,
+) -> tuple[str, ...]:
+    values = (
+        executable_providers
+        if executable_providers is not None
+        else executable_query_providers(settings)
+    )
+    return _provider_names(values)
+
+
 def _normalize_provider_names(values: tuple[str, ...]) -> tuple[str, ...]:
+    return _provider_names(values) or ("hybrid",)
+
+
+def _provider_names(values: tuple[str, ...]) -> tuple[str, ...]:
     providers: list[str] = []
     seen: set[str] = set()
     for value in values:
         provider = str(value).strip().lower()
-        if provider not in PLANNER_PROVIDER_NAMES or provider in seen:
+        if (
+            not provider
+            or provider in seen
+            or provider in RESERVED_INTERNAL_PROVIDER_NAMES
+        ):
             continue
         providers.append(provider)
         seen.add(provider)
-    return tuple(providers) or ("hybrid",)
+    return tuple(providers)
 
 
 def _planner_attempt_count(settings: Settings) -> int:

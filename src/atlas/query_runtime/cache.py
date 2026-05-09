@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from atlas.core.config import Settings
 from atlas.db.models import QueryCache, utcnow
 
-CACHE_KEY_SCHEMA = "atlas-query-cache-v2"
+CACHE_KEY_SCHEMA = "atlas-query-cache-v3"
 
 
 def make_cache_key(
@@ -164,6 +164,10 @@ def _retrieval_cache_config(
             default=settings.hybrid_lexical_top_k,
         ),
         "rrf_k": _option(options, "rrf_k", "hybrid_rrf_k", default=settings.hybrid_rrf_k),
+        "executable_providers": _json_list(
+            _option(options, "executable_providers", default=())
+        ),
+        "candidate_fusion": "cross_provider_rrf_v1",
     }
 
 
@@ -199,7 +203,15 @@ def _reranker_cache_config(
             options,
             "reranker_enabled",
             "use_reranker",
+            "rerank",
             default=nested.get("enabled", _setting(settings, "reranker_enabled", False)),
+        ),
+        "stage": "cross_provider_global",
+        "global_enabled_override": _option(
+            options,
+            "cross_provider_reranker_enabled",
+            "global_reranker_enabled",
+            default=nested.get("global_enabled", None),
         ),
         "model": _option(
             options,

@@ -25,7 +25,7 @@ class QueryPlanValidator:
         known_providers: tuple[str, ...] = KNOWN_PROVIDERS,
     ) -> None:
         self.ontology = ontology
-        self.known_providers = known_providers
+        self.known_providers = tuple(str(provider).strip().lower() for provider in known_providers)
 
     def validate(self, plan: QueryPlan) -> PlanValidation:
         reasons: list[str] = []

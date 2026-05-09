@@ -42,17 +42,28 @@ V2 Atlas Research Runtime
   设计：docs/Design-docs/02_V2_RESEARCH_RUNTIME.md
 
 V3.0 Atlas GraphProvider
-  状态：GraphProvider walking skeleton 已实现；默认不启用，作为 opt-in provider 接入 Evidence Kernel
+  状态：GraphProvider walking skeleton 已实现；默认作为可执行 provider 接入 Evidence Kernel
   边界：证明 provider contract、Postgres grounding pivot 和 trace auditability；不声明检索或答案质量提升
   设计：docs/Design-docs/03_V3_GRAPH_CONTEXT.md
   执行里程碑：docs/exec-plans/milestone/v3_graph_context_milestone.md
   实际架构：docs/exec-plans/version-arch/v3_graph_provider_arch.md
+
+V4 Preflight Atlas Industrialization
+  状态：V4 SQLProvider 前置工业化接口已实现
+  边界：backend registry、typed candidate policy、ingestion registry、async facade；SQLProvider 尚未实现
+  执行里程碑：docs/exec-plans/milestone/v4_preflight_industrialization_milestone.md
 ```
 
-默认 runtime 仍是 V1 hybrid-only。V3 graph 需要显式 opt-in：
+默认 runtime 现在注册 hybrid + graph 两个可执行 provider；是否调用 graph 由 QueryPlan 的 retrieval_units 决定，不会对所有 query 强制运行 graph。
 
 ```bash
 ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid,graph
+```
+
+如需回到 V1 baseline，可显式设为：
+
+```bash
+ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid
 ```
 
 

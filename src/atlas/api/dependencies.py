@@ -1,5 +1,18 @@
 from functools import lru_cache
 
+from qdrant_client import QdrantClient
+
+from atlas.backends import (
+    BackendBuildContext,
+    SparseEncoder,
+    build_answer_generator,
+    build_embedder,
+    build_graph_store,
+    build_llm_client,
+    build_reranker,
+    build_sparse_encoder,
+    build_vector_store,
+)
 from atlas.core.config import (
     Settings,
     bm25_sparse_enabled,
@@ -7,31 +20,58 @@ from atlas.core.config import (
     get_settings,
     known_query_providers,
 )
-from atlas.embeddings.bm25_sparse import BM25SparseEncoder
-from atlas.embeddings.bge_local import LocalBGEEmbedder
-from atlas.ingestion.service import IngestionService
+from atlas.db.session import SessionLocal
+from atlas.embeddings.base import Embedder
 from atlas.eval.service import EvalService
-from atlas.llm.openai_client import OpenAIAnswerGenerator
+from atlas.ingestion.service import IngestionService
+from atlas.llm.base import AnswerGenerator
+from atlas.llm.clients import LLMClient
+from atlas.query_orchestrator.llm_planner import LLMQueryPlanner
+from atlas.query_orchestrator.ontology import FinanceMetricOntology
 from atlas.query_orchestrator.service import QueryOrchestrator
 from atlas.query_runtime.service import QueryRuntime
-from atlas.retrieval.providers.text_hybrid.adapters.bm25 import BM25Retriever
-from atlas.retrieval.providers.text_hybrid.adapters.dense import DenseRetriever
-from atlas.retrieval.providers.text_hybrid.adapters.hybrid import HybridRetriever
-from atlas.retrieval.providers.graph import GraphProvider, PostgresGraphStore
+from atlas.retrieval.providers.graph import GraphProvider, GraphStore
+from atlas.retrieval.providers.registry import (
+    ProviderBuildContext,
+    build_provider,
+)
 from atlas.retrieval.providers.text_hybrid import TextHybridProvider
-from atlas.retrieval.ranking.reranker import CrossEncoderReranker
+from atlas.retrieval.ranking.reranker import Reranker
 from atlas.retrieval.router import ProviderRouter
-from atlas.vector.qdrant_client import get_qdrant_client
+
+
+def _backend_build_context() -> BackendBuildContext:
+    return BackendBuildContext(settings=get_settings())
 
 
 @lru_cache
-def get_embedder() -> LocalBGEEmbedder:
-    return LocalBGEEmbedder(get_settings())
+def get_embedder() -> Embedder:
+    settings = get_settings()
+    return build_embedder(settings.embedding_backend, _backend_build_context())
 
 
 @lru_cache
-def get_sparse_encoder() -> BM25SparseEncoder:
-    return BM25SparseEncoder(get_settings())
+def get_sparse_encoder() -> SparseEncoder:
+    settings = get_settings()
+    return build_sparse_encoder(settings.sparse_backend, _backend_build_context())
+
+
+@lru_cache
+def get_qdrant_client() -> QdrantClient:
+    settings = get_settings()
+    return build_vector_store(settings.vector_store_backend, _backend_build_context())
+
+
+@lru_cache
+def get_graph_store() -> GraphStore:
+    settings = get_settings()
+    return build_graph_store(settings.graph_store_backend, _backend_build_context())
+
+
+@lru_cache
+def get_llm_client() -> LLMClient:
+    settings = get_settings()
+    return build_llm_client(settings.llm_client_backend, _backend_build_context())
 
 
 @lru_cache
@@ -45,30 +85,22 @@ def get_ingestion_service() -> IngestionService:
     )
 
 
-@lru_cache
-def _get_dense_adapter() -> DenseRetriever:
+def _provider_build_context() -> ProviderBuildContext:
     settings = get_settings()
-    return DenseRetriever(
+    return ProviderBuildContext(
         settings=settings,
-        embedder=get_embedder(),
-        qdrant=get_qdrant_client(),
+        qdrant_factory=get_qdrant_client,
+        embedder_factory=get_embedder,
+        sparse_encoder_factory=get_sparse_encoder,
+        reranker_factory=get_reranker,
+        graph_store_factory=get_graph_store,
     )
 
 
 @lru_cache
-def _get_bm25_adapter() -> BM25Retriever:
+def get_reranker() -> Reranker | None:
     settings = get_settings()
-    return BM25Retriever(
-        settings=settings,
-        sparse_encoder=get_sparse_encoder(),
-        qdrant=get_qdrant_client(),
-    )
-
-
-@lru_cache
-def get_reranker() -> CrossEncoderReranker | None:
-    settings = get_settings()
-    return CrossEncoderReranker(settings.reranker_model)
+    return build_reranker(settings.reranker_backend, _backend_build_context())
 
 
 @lru_cache
@@ -78,86 +110,64 @@ def get_retriever():
 
 @lru_cache
 def get_text_hybrid_provider() -> TextHybridProvider:
-    settings = get_settings()
-    hybrid_rerank = HybridRetriever(
-        _get_dense_adapter(),
-        _get_bm25_adapter(),
-        rrf_k=settings.hybrid_rrf_k,
-        rrf_top_k=settings.rrf_top_k,
-        reranker=get_reranker(),
-        reranker_enabled=True,
-        reranker_top_k=settings.reranker_top_k,
-        reranker_output_k=settings.reranker_output_k,
-        dense_top_k=settings.hybrid_dense_top_k,
-        lexical_top_k=settings.hybrid_lexical_top_k,
-        max_context_tokens=settings.max_context_tokens,
-    )
-    hybrid_rrf = HybridRetriever(
-        _get_dense_adapter(),
-        _get_bm25_adapter(),
-        rrf_k=settings.hybrid_rrf_k,
-        rrf_top_k=settings.rrf_top_k,
-        reranker=None,
-        reranker_enabled=False,
-        reranker_top_k=settings.reranker_top_k,
-        reranker_output_k=settings.reranker_output_k,
-        dense_top_k=settings.hybrid_dense_top_k,
-        lexical_top_k=settings.hybrid_lexical_top_k,
-        max_context_tokens=settings.max_context_tokens,
-    )
-    default_mode = settings.retrieval_mode.strip().lower()
-    if default_mode == "hybrid" and not settings.reranker_enabled:
-        default_mode = "hybrid_rrf"
-    return TextHybridProvider(
-        dense_retriever=_get_dense_adapter(),
-        bm25_retriever=_get_bm25_adapter(),
-        hybrid_rrf_retriever=hybrid_rrf,
-        hybrid_rerank_retriever=hybrid_rerank,
-        default_mode=default_mode,
-        rrf_k=settings.hybrid_rrf_k,
-        rrf_top_k=settings.rrf_top_k,
-        reranker=get_reranker(),
-        reranker_enabled=settings.reranker_enabled,
-        reranker_top_k=settings.reranker_top_k,
-        reranker_output_k=settings.reranker_output_k,
-        dense_top_k=settings.hybrid_dense_top_k,
-        lexical_top_k=settings.hybrid_lexical_top_k,
-        max_context_tokens=settings.max_context_tokens,
-    )
+    return build_provider("hybrid", _provider_build_context())
 
 
 @lru_cache
 def get_graph_provider() -> GraphProvider:
-    settings = get_settings()
-    return GraphProvider(
-        store=PostgresGraphStore(),
-        max_context_tokens=settings.max_context_tokens,
-    )
+    return build_provider("graph", _provider_build_context())
 
 
 @lru_cache
 def get_provider_router() -> ProviderRouter:
     settings = get_settings()
-    providers = {}
     executable_providers = executable_query_providers(settings)
-    if "hybrid" in executable_providers:
-        providers["hybrid"] = get_text_hybrid_provider()
-    if "graph" in executable_providers:
-        providers["graph"] = get_graph_provider()
+    providers = {
+        name: _get_provider_by_name(name)
+        for name in executable_providers
+    }
     return ProviderRouter(
         providers,
         known_providers=known_query_providers(settings),
+        session_factory=SessionLocal,
+        reranker=get_reranker(),
+        reranker_enabled=settings.reranker_enabled,
+        reranker_top_k=settings.reranker_top_k,
+        reranker_output_k=settings.reranker_output_k,
+        max_context_tokens=settings.max_context_tokens,
     )
 
 
+def _get_provider_by_name(name: str):
+    if name == "hybrid":
+        return get_text_hybrid_provider()
+    if name == "graph":
+        return get_graph_provider()
+    return build_provider(name, _provider_build_context())
+
+
 @lru_cache
-def get_answer_generator() -> OpenAIAnswerGenerator:
-    return OpenAIAnswerGenerator(get_settings())
+def get_answer_generator() -> AnswerGenerator:
+    settings = get_settings()
+    return build_answer_generator(settings.answer_generator_backend, _backend_build_context())
 
 
 @lru_cache
 def get_query_orchestrator() -> QueryOrchestrator:
-    return QueryOrchestrator(settings=get_settings())
+    settings = get_settings()
+    if settings.openai_api_key is None:
+        return QueryOrchestrator(settings=settings)
+    llm_client = get_llm_client()
+    ontology = FinanceMetricOntology.load(settings.finance_metric_ontology_path)
+    return QueryOrchestrator(
+        settings=settings,
+        ontology=ontology,
+        llm_planner=LLMQueryPlanner(
+            settings=settings,
+            ontology=ontology,
+            client=llm_client,
+        ),
+    )
 
 
 @lru_cache

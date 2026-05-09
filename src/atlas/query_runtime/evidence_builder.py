@@ -14,6 +14,22 @@ from atlas.retrieval.models.evidence_contract import (
 )
 
 
+_FLATTENED_LIST_METADATA_KEYS = {
+    "provider_provenance",
+    "prompt_provider_provenance",
+    "prompt_providers",
+    "retrieved_by",
+    "sources",
+    "source_anchors",
+    "lanes",
+    "parent_lanes",
+    "prompt_deduped_evidence_ids",
+    "prompt_deduped_candidate_ids",
+    "provider_local_deduped_evidence_ids",
+    "cross_provider_deduped_candidate_ids",
+}
+
+
 @dataclass(frozen=True)
 class EvidenceBlock:
     document_id: str
@@ -42,6 +58,7 @@ class EvidenceBlock:
     best_rerank_rank: int | None = None
     best_rerank_score: float | None = None
     rank: int | None = None
+    source_type: str = "text_chunk"
 
 
 @dataclass(frozen=True)
@@ -72,6 +89,7 @@ class _CandidateEntry:
     metadata: dict[str, Any]
     source_uri: str | None
     section_title: str | None
+    source_type: str
 
 
 @dataclass
@@ -123,6 +141,7 @@ class _ChunkAccumulator:
             metadata=metadata,
             source_uri=_first_optional_text(entry.source_uri for entry in entries),
             section_title=_first_optional_text(entry.section_title for entry in entries),
+            source_type=_entry_source_type(entries),
         )
 
 
@@ -223,6 +242,7 @@ class _ParentAccumulator:
             best_rerank_rank=_min_optional_int(entry.rerank_rank for entry in entries),
             best_rerank_score=_max_optional_float(entry.rerank_score for entry in entries),
             rank=rank,
+            source_type=_block_source_type(entries, parent_id=parent_id),
         )
 
     def to_contract_block(
@@ -250,10 +270,13 @@ class _ParentAccumulator:
         }
         block_coverage = _block_coverage(runtime_block, coverage or {})
         metadata["coverage"] = block_coverage
+        metadata["source_type"] = runtime_block.source_type
+        provider = _contract_provider(metadata, runtime_block.retrieved_by)
+        metadata["provider"] = provider
         return ContractEvidenceBlock(
             evidence_id=f"c{evidence_index}",
-            source_type="parent_block" if runtime_block.parent_id else "text_chunk",
-            provider=str(metadata.get("provider") or metadata.get("retrieval_provider") or "text_hybrid"),
+            source_type=runtime_block.source_type,
+            provider=provider,
             text=runtime_block.text,
             document_id=runtime_block.document_id,
             doc_name=runtime_block.doc_name,
@@ -570,6 +593,17 @@ def _candidate_to_entry(candidate: Candidate, order: int) -> _CandidateEntry:
         token_count = approx_token_count(text) if text else 0
 
     metadata = _dict_value(getattr(candidate, "metadata", None))
+    source_type = _candidate_source_type(candidate, metadata)
+    rerankable = _bool_or_default(metadata.get("rerankable", getattr(candidate, "rerankable", None)), True)
+    fusion_policy = _fusion_policy(metadata.get("fusion_policy", getattr(candidate, "fusion_policy", None)))
+    structured_payload = _dict_value(metadata.get("structured_payload"))
+    if not structured_payload:
+        structured_payload = _dict_value(getattr(candidate, "structured_payload", None))
+    metadata.setdefault("source_type", source_type)
+    metadata.setdefault("rerankable", rerankable)
+    metadata.setdefault("fusion_policy", fusion_policy)
+    if structured_payload:
+        metadata.setdefault("structured_payload", structured_payload)
     lexical_backend = _optional_text(getattr(candidate, "lexical_backend", None))
     retrieved_by = _candidate_sources(candidate, lexical_backend)
 
@@ -604,6 +638,7 @@ def _candidate_to_entry(candidate: Candidate, order: int) -> _CandidateEntry:
         metadata=metadata,
         source_uri=_optional_text(getattr(candidate, "source_uri", None)),
         section_title=_optional_text(getattr(candidate, "section_title", None)),
+        source_type=source_type,
     )
 
 
@@ -681,6 +716,30 @@ def _metadata_parent_id(metadata: Mapping[str, Any]) -> str | None:
             "block_id",
         )
     )
+
+
+def _candidate_source_type(candidate: Any, metadata: Mapping[str, Any]) -> str:
+    return _optional_text(metadata.get("source_type")) or _optional_text(
+        getattr(candidate, "source_type", None)
+    ) or "text_chunk"
+
+
+def _entry_source_type(entries: Sequence[_CandidateEntry]) -> str:
+    source_types = _unique(entry.source_type for entry in entries)
+    if not source_types:
+        return "text_chunk"
+    if len(source_types) == 1:
+        return source_types[0]
+    if all(source_type in {"text_chunk", "parent_block"} for source_type in source_types):
+        return "text_chunk"
+    return "mixed"
+
+
+def _block_source_type(entries: Sequence[_CandidateEntry], *, parent_id: str | None) -> str:
+    source_type = _entry_source_type(entries)
+    if parent_id and source_type == "text_chunk":
+        return "parent_block"
+    return source_type
 
 
 def _entry_sort_key(entry: _CandidateEntry) -> tuple[int, int, int, int]:
@@ -926,6 +985,22 @@ def _merge_metadata(metadata_items: Iterable[dict[str, Any]]) -> dict[str, Any]:
     merged: dict[str, Any] = {}
     for metadata in metadata_items:
         for key, value in metadata.items():
+            if key == "source_anchor":
+                anchors = _metadata_list(merged.get("source_anchors"))
+                for item in _metadata_list(value):
+                    if not any(existing == item for existing in anchors):
+                        anchors.append(item)
+                if anchors:
+                    merged["source_anchors"] = anchors
+                    merged.setdefault("source_anchor", anchors[0])
+                continue
+            if key in _FLATTENED_LIST_METADATA_KEYS:
+                values = _metadata_list(merged.get(key))
+                for item in _metadata_list(value):
+                    if not any(existing == item for existing in values):
+                        values.append(item)
+                merged[key] = values
+                continue
             if key not in merged:
                 merged[key] = value
                 continue
@@ -936,6 +1011,45 @@ def _merge_metadata(metadata_items: Iterable[dict[str, Any]]) -> dict[str, Any]:
                 values.append(value)
             merged[key] = values
     return merged
+
+
+def _metadata_list(value: Any) -> list[Any]:
+    if value in (None, "", [], {}):
+        return []
+    if isinstance(value, list | tuple | set):
+        items: list[Any] = []
+        for item in value:
+            items.extend(
+                _metadata_list(item)
+                if isinstance(item, list | tuple | set)
+                else [item]
+            )
+        return items
+    return [value]
+
+
+def _contract_provider(metadata: Mapping[str, Any], retrieved_by: Iterable[str]) -> str:
+    providers = _metadata_list(metadata.get("prompt_providers"))
+    if not providers:
+        providers = [
+            item.get("provider_local_provider") or item.get("provider")
+            for item in _metadata_list(metadata.get("provider_provenance"))
+            if isinstance(item, Mapping)
+        ]
+    provider = metadata.get("provider") or metadata.get("retrieval_provider")
+    if not providers:
+        providers = _metadata_list(provider)
+    if len({str(item) for item in providers if item}) > 1:
+        return "cross_provider"
+    for value in providers:
+        if value:
+            return str(value)
+    if isinstance(provider, str) and provider:
+        return provider
+    for value in retrieved_by:
+        if value:
+            return str(value)
+    return "text_hybrid"
 
 
 def _unique(values: Iterable[str | None]) -> tuple[str, ...]:
@@ -1033,6 +1147,21 @@ def _float_or_none(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _bool_or_default(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None or value == "":
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on", "enabled", "enable"}
+
+
+def _fusion_policy(value: Any) -> str:
+    text = str(value or "ranked").strip().lower()
+    if text in {"pinned", "supporting"}:
+        return text
+    return "ranked"
 
 
 def _dict_value(value: Any) -> dict[str, Any]:

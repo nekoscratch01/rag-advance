@@ -46,6 +46,7 @@ class ProviderRouterResult:
     evidence: tuple[Any, ...]
     provider_results: tuple[ProviderResult, ...]
     trace: dict[str, Any]
+    evidence_pack: Any | None = None
 
 
 def source_anchor_from_candidate(candidate: Any) -> SourceAnchor:

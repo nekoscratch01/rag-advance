@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+
+FusionPolicy = Literal["ranked", "pinned", "supporting"]
 
 
 @dataclass(frozen=True)
@@ -40,3 +43,6 @@ class Candidate:
     lane_rank: int | None = None
     lane_score: float | None = None
     weighted_contribution: float | None = None
+    rerankable: bool = True
+    fusion_policy: FusionPolicy = "ranked"
+    structured_payload: dict[str, Any] = field(default_factory=dict)

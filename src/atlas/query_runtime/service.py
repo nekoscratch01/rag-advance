@@ -1,4 +1,6 @@
+import asyncio
 from dataclasses import dataclass, field, replace
+import inspect
 import time
 from typing import Any, Protocol
 
@@ -33,8 +35,9 @@ from atlas.retrieval.models.retrieval_task import (
     serialize_retrieval_task,
     tasks_from_plan,
 )
-from atlas.retrieval.contracts import ProviderRouterResult
+from atlas.retrieval.contracts import ProviderResult, ProviderRouterResult
 from atlas.retrieval.router import ProviderRouter, serialize_provider_result
+from atlas.retrieval.providers.base import RetrievalContext, RetrievalProvider
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,62 @@ class Retriever(Protocol):
         ...
 
 
+class _LegacyRetrieverProvider(RetrievalProvider):
+    provider_name = "hybrid"
+
+    def __init__(self, retriever: Retriever) -> None:
+        self.retriever = retriever
+
+    async def aretrieve_candidates(self, context: RetrievalContext) -> ProviderResult:
+        return self.retrieve_provider_result(
+            context.db,
+            query=context.query,
+            top_k=context.top_k,
+            filters=context.filters,
+            options=context.options,
+            query_plan=context.query_plan,
+            retrieval_tasks=context.retrieval_tasks,
+        )
+
+    def retrieve_provider_result(
+        self,
+        db: Session,
+        *,
+        query: str,
+        top_k: int,
+        filters: dict | None,
+        options: dict,
+        query_plan: QueryPlan,
+        retrieval_tasks: list[RetrievalTask],
+    ) -> ProviderResult:
+        started = time.perf_counter()
+        evidence = tuple(
+            _retrieve_evidence(
+                self.retriever,
+                db,
+                query=query,
+                top_k=top_k,
+                filters=filters,
+                options=options,
+                query_plan=query_plan,
+                retrieval_tasks=retrieval_tasks,
+            )
+        )
+        return ProviderResult(
+            provider="hybrid",
+            task_id=None if len(retrieval_tasks) != 1 else retrieval_tasks[0].task_id,
+            unit_id=None if len(retrieval_tasks) != 1 else retrieval_tasks[0].unit_id,
+            status="executed" if evidence else "empty",
+            evidence=evidence,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            trace={
+                "provider": "hybrid",
+                "status": "executed" if evidence else "empty",
+                "legacy_adapter": True,
+            },
+        )
+
+
 class QueryRuntime:
     def __init__(
         self,
@@ -72,15 +131,42 @@ class QueryRuntime:
         self.settings = settings
         self.retriever = retriever
         providers = {}
+        injected_retriever = retriever is not None
         if provider_router is None:
             executable_providers = executable_query_providers(settings)
-            if retriever is not None and "hybrid" in executable_providers:
-                providers["hybrid"] = retriever
-            if "graph" in executable_providers:
-                providers["graph"] = _auto_wire_graph_provider(settings)
+            if injected_retriever:
+                executable_providers = ("hybrid",)
+            for provider_name in executable_providers:
+                if retriever is not None and provider_name == "hybrid":
+                    providers["hybrid"] = (
+                        retriever
+                        if isinstance(retriever, RetrievalProvider)
+                        else _LegacyRetrieverProvider(retriever)
+                    )
+                    continue
+                providers[provider_name] = _auto_wire_provider(settings, provider_name)
+        router_reranker = None
+        if provider_router is None and settings.reranker_enabled:
+            from atlas.backends import BackendBuildContext, build_reranker
+
+            router_reranker = build_reranker(
+                settings.reranker_backend,
+                BackendBuildContext(settings=settings),
+            )
+        if provider_router is None:
+            from atlas.db.session import SessionLocal
+            router_session_factory = SessionLocal
+            if injected_retriever:
+                router_session_factory = None
         self.provider_router = provider_router or ProviderRouter(
             providers,
-            known_providers=known_query_providers(settings),
+            known_providers=_runtime_known_providers(settings, include_hybrid=injected_retriever),
+            session_factory=router_session_factory,
+            reranker=router_reranker,
+            reranker_enabled=settings.reranker_enabled,
+            reranker_top_k=settings.reranker_top_k,
+            reranker_output_k=settings.reranker_output_k,
+            max_context_tokens=settings.max_context_tokens,
         )
         self.generator = generator
         self.orchestrator = orchestrator
@@ -121,6 +207,9 @@ class QueryRuntime:
             runtime_options["retrieval_tasks"] = [
                 serialize_retrieval_task(task) for task in retrieval_tasks
             ]
+            runtime_options["executable_providers"] = list(
+                self.provider_router.executable_providers
+            )
         cache_started = time.perf_counter()
         cache_policy = _cache_policy(self.settings, runtime_options)
         cache_key = _cache_key(
@@ -315,6 +404,64 @@ class QueryRuntime:
 
         if not evidence:
             empty_pack_details = _provider_router_details(router_result)
+            if _provider_router_failed(router_result):
+                atlas_error = AtlasError(
+                    ErrorCode.UPSTREAM_VECTOR_STORE_UNAVAILABLE,
+                    "Provider retrieval failed.",
+                    status_code=502,
+                    details=_provider_failure_details(router_result),
+                    trace_id=trace_id,
+                )
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                _record_trace_metadata(
+                    query_id=query_id,
+                    cache_hit=False,
+                    cache_key=cache_key,
+                    cache_latency_ms=cache_latency_ms,
+                    retrieval_latency_ms=retrieval_latency_ms,
+                    generation_latency_ms=0,
+                    cache_status=cache_status,
+                    retrieval_status="failed",
+                    generation_status="skipped",
+                    settings=self.settings,
+                    options=runtime_options,
+                    effective_top_k=effective_top_k,
+                    query_plan=query_plan,
+                    retrieval_tasks=retrieval_tasks,
+                    plan_latency_ms=plan_latency_ms,
+                )
+                query_run = make_query_run(
+                    query_id=query_id,
+                    trace_id=trace_id,
+                    user_query=query,
+                    normalized_query=normalized_query,
+                    answer=None,
+                    confidence="unknown",
+                    citations=[],
+                    settings=self.settings,
+                    latency_ms=latency_ms,
+                    error_message=atlas_error.error_message,
+                )
+                details = _runtime_details(
+                    query_plan=query_plan,
+                    retrieval_tasks=retrieval_tasks,
+                    plan_latency_ms=plan_latency_ms,
+                    extra={
+                        **_retrieval_trace_details([]),
+                        **empty_pack_details,
+                        **_llm_io_skipped_details("retrieval_failed"),
+                    },
+                )
+                _attach_query_details(query_run, details)
+                repositories.add_query_trace(
+                    db,
+                    query_run,
+                    retrieval_events,
+                    None,
+                    observability=planner_observability,
+                )
+                db.commit()
+                raise atlas_error
             latency_ms = int((time.perf_counter() - started) * 1000)
             answer = "当前导入的文档中没有检索到足够证据回答这个问题。"
             citations: list[dict] = []
@@ -578,6 +725,7 @@ class QueryRuntime:
                 citations=citations,
                 details=details,
             )
+
         except AtlasError as exc:
             latency_ms = int((time.perf_counter() - started) * 1000)
             llm_latency_ms = int((time.perf_counter() - llm_started) * 1000)
@@ -658,14 +806,73 @@ class QueryRuntime:
             exc.trace_id = trace_id
             raise
 
+    async def arun(
+        self,
+        db: Session | None = None,
+        *,
+        query: str,
+        top_k: int | None,
+        filters: dict | None,
+        options: dict | None = None,
+    ) -> QueryResult:
+        if db is not None:
+            raise RuntimeError(
+                "QueryRuntime.arun cannot use a caller-owned sync Session. "
+                "Call run(...) with that session, or call arun(...) without db "
+                "so the runtime owns the session inside the worker thread."
+            )
+        return await asyncio.to_thread(
+            self._run_with_owned_session,
+            query=query,
+            top_k=top_k,
+            filters=filters,
+            options=options,
+        )
 
-def _auto_wire_graph_provider(settings: Settings):
-    from atlas.retrieval.providers.graph import GraphProvider, PostgresGraphStore
+    def _run_with_owned_session(
+        self,
+        *,
+        query: str,
+        top_k: int | None,
+        filters: dict | None,
+        options: dict | None = None,
+    ) -> QueryResult:
+        from atlas.db.session import SessionLocal
 
-    return GraphProvider(
-        store=PostgresGraphStore(),
-        max_context_tokens=settings.max_context_tokens,
+        db = SessionLocal()
+        try:
+            return self.run(
+                db,
+                query=query,
+                top_k=top_k,
+                filters=filters,
+                options=options,
+            )
+        finally:
+            db.close()
+
+
+def _auto_wire_provider(settings: Settings, provider_name: str):
+    from atlas.backends import (
+        BackendBuildContext,
+        build_embedder,
+        build_graph_store,
+        build_reranker,
+        build_sparse_encoder,
+        build_vector_store,
     )
+    from atlas.retrieval.providers.registry import ProviderBuildContext, build_provider
+
+    backend_context = BackendBuildContext(settings=settings)
+    context = ProviderBuildContext(
+        settings=settings,
+        qdrant_factory=lambda: build_vector_store(settings.vector_store_backend, backend_context),
+        embedder_factory=lambda: build_embedder(settings.embedding_backend, backend_context),
+        sparse_encoder_factory=lambda: build_sparse_encoder(settings.sparse_backend, backend_context),
+        reranker_factory=lambda: build_reranker(settings.reranker_backend, backend_context),
+        graph_store_factory=lambda: build_graph_store(settings.graph_store_backend, backend_context),
+    )
+    return build_provider(provider_name, context)
 
 
 def _dedupe_prompt_evidence_by_chunk_id(evidence: list[Evidence]) -> list[Evidence]:
@@ -736,7 +943,9 @@ def _with_prompt_provenance(item: Evidence, key: str) -> Evidence:
     metadata.update(
         {
             "prompt_dedupe_key": key,
-            "prompt_deduped_evidence_ids": [item.evidence_id],
+            "prompt_deduped_evidence_ids": list(
+                metadata.get("prompt_deduped_evidence_ids") or [item.evidence_id]
+            ),
             "prompt_provider_provenance": provenance,
             "prompt_providers": provider_names,
             "retrieved_by": retrieved_by,
@@ -749,6 +958,12 @@ def _prompt_provider_provenance(
     metadata: dict[str, Any],
     item: Evidence,
 ) -> list[dict[str, Any]]:
+    existing = metadata.get("prompt_provider_provenance") or metadata.get("provider_provenance")
+    existing_items = (
+        [dict(value) for value in existing if isinstance(value, dict)]
+        if isinstance(existing, list)
+        else []
+    )
     providers = _dedupe(
         [
             str(value)
@@ -770,7 +985,7 @@ def _prompt_provider_provenance(
     )
     if not providers:
         providers = ["unknown"]
-    return [
+    generated_items = [
         {
             "provider": provider,
             "provider_local_provider": metadata.get("provider_local_provider"),
@@ -781,6 +996,7 @@ def _prompt_provider_provenance(
         }
         for provider in providers
     ]
+    return [*existing_items, *generated_items]
 
 
 def _dedupe_provenance(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -788,16 +1004,30 @@ def _dedupe_provenance(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     deduped: list[dict[str, Any]] = []
     for item in items:
         key = (
-            item.get("provider"),
-            item.get("provider_local_provider"),
-            item.get("evidence_id"),
-            item.get("chunk_id"),
+            _provenance_key_value(item.get("provider")),
+            _provenance_key_value(item.get("provider_local_provider")),
+            _provenance_key_value(item.get("evidence_id")),
+            _provenance_key_value(item.get("chunk_id")),
+            _provenance_key_value(item.get("retrieval_task_id")),
+            _provenance_key_value(item.get("retrieval_unit_id")),
         )
         if key in seen:
             continue
         seen.add(key)
         deduped.append(dict(item))
     return deduped
+
+
+def _provenance_key_value(value: Any) -> Any:
+    if isinstance(value, list | tuple):
+        return tuple(_provenance_key_value(item) for item in value)
+    if isinstance(value, dict):
+        return tuple(
+            sorted((str(key), _provenance_key_value(item)) for key, item in value.items())
+        )
+    if isinstance(value, set):
+        return tuple(sorted(_provenance_key_value(item) for item in value))
+    return value
 
 
 def _prompt_provider_names_from_provenance(
@@ -868,6 +1098,13 @@ def _retrieve_evidence(
             options=options,
         )
     return retriever.retrieve(db, query=query, top_k=top_k, filters=filters)
+
+
+def _runtime_known_providers(settings: Settings, *, include_hybrid: bool) -> tuple[str, ...]:
+    providers = list(known_query_providers(settings))
+    if include_hybrid and "hybrid" not in providers:
+        providers.insert(0, "hybrid")
+    return tuple(providers)
 
 
 def _retrieve_with_router(
@@ -996,16 +1233,86 @@ def _provider_router_details(router_result: ProviderRouterResult | None) -> dict
     if router_result is None:
         return {}
     details: dict[str, Any] = {
-        "provider_router_trace": dict(router_result.trace),
+        "provider_router_trace": _sanitize_provider_router_trace(router_result.trace),
         "provider_results": [
-            serialize_provider_result(result) for result in router_result.provider_results
+            _sanitize_serialized_provider_result(serialize_provider_result(result))
+            for result in router_result.provider_results
         ],
     }
+    if router_result.evidence_pack is not None:
+        details["evidence_pack"] = _evidence_pack_summary(router_result.evidence_pack)
+        return details
     for result in router_result.provider_results:
         if result.evidence_pack is not None:
             details["evidence_pack"] = _evidence_pack_summary(result.evidence_pack)
             break
     return details
+
+
+def _sanitize_provider_router_trace(trace: dict[str, Any]) -> dict[str, Any]:
+    sanitized = dict(trace)
+    provider_results = sanitized.get("provider_results")
+    if isinstance(provider_results, list):
+        sanitized["provider_results"] = [
+            _sanitize_serialized_provider_result(item)
+            if isinstance(item, dict)
+            else item
+            for item in provider_results
+        ]
+    router_error = sanitized.get("router_error")
+    if isinstance(router_error, dict):
+        sanitized["router_error"] = _sanitize_provider_trace(router_error)
+    return sanitized
+
+
+def _sanitize_serialized_provider_result(payload: dict[str, Any]) -> dict[str, Any]:
+    sanitized = dict(payload)
+    trace = sanitized.get("trace")
+    if isinstance(trace, dict):
+        sanitized["trace"] = _sanitize_provider_trace(trace)
+    return sanitized
+
+
+def _sanitize_provider_trace(trace: dict[str, Any]) -> dict[str, Any]:
+    if trace.get("status") != "failed":
+        return dict(trace)
+    allowed_keys = {
+        "provider",
+        "status",
+        "reason",
+        "error_type",
+        "task_ids",
+        "unit_ids",
+        "error_code",
+        "status_code",
+    }
+    return {key: value for key, value in trace.items() if key in allowed_keys}
+
+
+def _provider_router_failed(router_result: ProviderRouterResult | None) -> bool:
+    if router_result is None:
+        return False
+    if str(router_result.trace.get("status")) == "failed":
+        return True
+    return any(result.status == "failed" for result in router_result.provider_results)
+
+
+def _provider_failure_details(router_result: ProviderRouterResult | None) -> dict[str, Any]:
+    if router_result is None:
+        return {}
+    failures = [
+        {
+            "provider": result.provider,
+            "task_id": result.task_id,
+            "unit_id": result.unit_id,
+            "reason": result.reason,
+            "status": result.status,
+            "error_type": dict(result.trace).get("error_type"),
+        }
+        for result in router_result.provider_results
+        if result.status == "failed"
+    ]
+    return {"provider_failures": failures}
 
 
 def _llm_io_request(
@@ -1212,9 +1519,9 @@ def _evidence_trace_item(item: Evidence) -> dict[str, Any]:
         "provider_local_provider": metadata.get("provider_local_provider"),
         "source_anchor": metadata.get("source_anchor"),
         "lane": metadata.get("lane"),
-        "lanes": list(metadata.get("lanes") or ()),
-        "parent_lanes": list(metadata.get("parent_lanes") or ()),
-        "internal_lanes": list(metadata.get("internal_lanes") or ()),
+        "lanes": _as_text_list(metadata.get("lanes")),
+        "parent_lanes": _as_text_list(metadata.get("parent_lanes")),
+        "internal_lanes": _as_text_list(metadata.get("internal_lanes")),
         "lane_attributions": list(metadata.get("lane_attributions") or ()),
         "lane_contributions": list(
             metadata.get("lane_contributions")
@@ -1303,6 +1610,11 @@ def _as_text_list(value: Any) -> list[str]:
         return []
     if isinstance(value, str):
         return [value] if value else []
+    if isinstance(value, list | tuple | set):
+        flattened: list[str] = []
+        for item in value:
+            flattened.extend(_as_text_list(item))
+        return flattened
     try:
         return [str(item) for item in value if item]
     except TypeError:
@@ -1407,9 +1719,24 @@ def _plan_query(
     started = time.perf_counter()
     plan_with_observability = getattr(orchestrator, "plan_with_observability", None)
     if callable(plan_with_observability):
-        plan, planner_observability = plan_with_observability(query, use_llm=use_llm)
+        if _call_accepts_keyword(plan_with_observability, "executable_providers"):
+            plan, planner_observability = plan_with_observability(
+                query,
+                use_llm=use_llm,
+                executable_providers=executable_providers,
+            )
+        else:
+            plan, planner_observability = plan_with_observability(query, use_llm=use_llm)
     else:
-        plan = orchestrator.plan(query, use_llm=use_llm)
+        plan_method = getattr(orchestrator, "plan")
+        if _call_accepts_keyword(plan_method, "executable_providers"):
+            plan = orchestrator.plan(
+                query,
+                use_llm=use_llm,
+                executable_providers=executable_providers,
+            )
+        else:
+            plan = orchestrator.plan(query, use_llm=use_llm)
         planner_observability = getattr(orchestrator, "last_observability", None)
     latency_ms = int((time.perf_counter() - started) * 1000)
     return (
@@ -1417,6 +1744,17 @@ def _plan_query(
         tasks_from_plan(plan, executable_providers=executable_providers),
         latency_ms,
         planner_observability if isinstance(planner_observability, dict) else None,
+    )
+
+
+def _call_accepts_keyword(callable_obj: Any, keyword: str) -> bool:
+    try:
+        signature = inspect.signature(callable_obj)
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD or name == keyword
+        for name, parameter in signature.parameters.items()
     )
 
 

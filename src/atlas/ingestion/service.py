@@ -1,22 +1,39 @@
 from dataclasses import dataclass
 import hashlib
 from typing import Any
-from uuid import NAMESPACE_URL, UUID, uuid5
 
-from qdrant_client import QdrantClient, models
+from qdrant_client import QdrantClient
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
-from atlas.core.config import Settings, bm25_sparse_enabled
+from atlas.core.config import Settings
 from atlas.core.ids import new_id
 from atlas.db import repositories
 from atlas.db.models import Chunk, Document, IngestionRun, ParentBlock, utcnow
 from atlas.embeddings.base import Embedder
 from atlas.embeddings.bm25_sparse import BM25SparseEncoder
-from atlas.ingestion.chunker import chunk_text
-from atlas.ingestion.loaders import LoadedDocument, load_local_document
+from atlas.ingestion.builtins import (
+    parent_id as _parent_id,
+    parent_id_for_chunk as _parent_id_for_chunk_input,
+    point_vector as _builtin_point_vector,
+    qdrant_point_id as _builtin_qdrant_point_id,
+)
+from atlas.ingestion.contracts import (
+    ChunkInput,
+    Chunker,
+    LoadedDocument,
+    ParentBlockBuilder,
+    StructuredExtractor,
+    VectorIndexer,
+)
+from atlas.ingestion.loaders import load_local_document
 from atlas.ingestion.path_policy import allowed_document_roots
-from atlas.vector.collections import ensure_chunk_collection
+from atlas.ingestion.registry import (
+    chunker_registry,
+    parent_block_builder_registry,
+    structured_extractor_registry,
+    vector_indexer_registry,
+)
 
 
 @dataclass(frozen=True)
@@ -42,11 +59,28 @@ class IngestionService:
         embedder: Embedder,
         qdrant: QdrantClient,
         sparse_encoder: BM25SparseEncoder | None = None,
+        chunker: Chunker | None = None,
+        parent_block_builder: ParentBlockBuilder | None = None,
+        vector_indexer: VectorIndexer | None = None,
+        structured_extractor: StructuredExtractor | None = None,
     ) -> None:
         self.settings = settings
         self.embedder = embedder
         self.qdrant = qdrant
         self.sparse_encoder = sparse_encoder
+        self.chunker = chunker or chunker_registry.get("default")
+        self.parent_block_builder = (
+            parent_block_builder or parent_block_builder_registry.get("default")
+        )
+        self.vector_indexer = vector_indexer or vector_indexer_registry.build(
+            "qdrant",
+            settings=settings,
+            qdrant=qdrant,
+            sparse_encoder=sparse_encoder,
+        )
+        self.structured_extractor = structured_extractor or structured_extractor_registry.get(
+            "noop"
+        )
 
     def ingest_paths(
         self,
@@ -56,7 +90,7 @@ class IngestionService:
         source_uri: str | None,
         metadata: dict,
     ) -> IngestionResult:
-        ensure_chunk_collection(self.qdrant, self.settings)
+        self.vector_indexer.prepare()
 
         ingestion_run_id = new_id("ing")
         ingestion_run = IngestionRun(
@@ -103,7 +137,9 @@ class IngestionService:
             )
             ingestion_run.document_ids_json = document_ids
             ingestion_run.summary_json = _summary_payload(paths, summaries)
-            ingestion_run.error_message = f"{failed_count} document(s) failed" if failed_count else None
+            ingestion_run.error_message = (
+                f"{failed_count} document(s) failed" if failed_count else None
+            )
             ingestion_run.finished_at = utcnow()
             db.commit()
 
@@ -129,12 +165,12 @@ class IngestionService:
                 chunk_count=len(chunks),
             )
 
-        chunk_inputs = _chunk_loaded_document(
+        chunk_inputs = self.chunker.chunk(
             loaded,
             target_tokens=self.settings.chunk_target_tokens,
             overlap_tokens=self.settings.chunk_overlap_tokens,
         )
-        embeddings = self.embedder.embed_texts([item["text"] for item in chunk_inputs])
+        embeddings = self.embedder.embed_texts([item.text for item in chunk_inputs])
 
         document = Document(
             document_id=new_id("doc"),
@@ -147,7 +183,10 @@ class IngestionService:
         )
         db.add(document)
 
-        parent_blocks = _parent_blocks_for_loaded_document(document.document_id, loaded)
+        parent_blocks = self.parent_block_builder.build(
+            document_id=document.document_id,
+            loaded=loaded,
+        )
         parent_by_page = {
             parent.page_start: parent
             for parent in parent_blocks
@@ -158,28 +197,28 @@ class IngestionService:
 
         chunks: list[Chunk] = []
         for chunk_index, item in enumerate(chunk_inputs):
-            parent_id = _parent_id_for_chunk(document.document_id, item, parent_by_page)
+            parent_id = _parent_id_for_chunk_input(document.document_id, item, parent_by_page)
             chunk = Chunk(
                 chunk_id=new_id("chk"),
                 document_id=document.document_id,
                 parent_id=parent_id,
                 chunk_index=chunk_index,
-                text=item["text"],
-                text_hash=_sha256(item["text"]),
-                section_title=item["section_title"],
-                page_start=item["page_start"],
-                page_end=item["page_end"],
-                token_count=item["token_count"],
+                text=item.text,
+                text_hash=_sha256(item.text),
+                section_title=item.section_title,
+                page_start=item.page_start,
+                page_end=item.page_end,
+                token_count=item.token_count,
                 embedding_model=self.embedder.model_name,
                 embedding_dim=self.embedder.dimension,
                 metadata_json={
                     "source_path": str(loaded.path),
                     "parent_id": parent_id,
-                    "page_start": item["page_start"],
-                    "page_end": item["page_end"],
+                    "page_start": item.page_start,
+                    "page_end": item.page_end,
                 },
             )
-            parent = parent_by_page.get(item["page_start"]) if item["page_start"] is not None else None
+            parent = parent_by_page.get(item.page_start) if item.page_start is not None else None
             if parent is None and parent_blocks:
                 parent = parent_blocks[0]
             if parent is not None:
@@ -187,14 +226,12 @@ class IngestionService:
             chunks.append(chunk)
             db.add(chunk)
 
-        db.flush()
-        db.commit()
-
         try:
+            db.flush()
             self._upsert_vectors(document=document, chunks=chunks, embeddings=embeddings)
+            db.commit()
         except Exception:
-            self._delete_qdrant_points(chunks)
-            self._delete_document_rows(db, document.document_id)
+            self._cleanup_failed_ingest(db, document_id=document.document_id, chunks=chunks)
             raise
 
         return IngestedDocumentSummary(
@@ -211,52 +248,24 @@ class IngestionService:
         chunks: list[Chunk],
         embeddings: list[list[float]],
     ) -> None:
-        sparse_vectors = None
-        if bm25_sparse_enabled(self.settings):
-            sparse_vectors = self._sparse_encoder().embed_texts([chunk.text for chunk in chunks])
-
-        points = []
-        for index, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
-            points.append(
-                models.PointStruct(
-                    id=_qdrant_point_id(chunk.chunk_id),
-                    vector=_point_vector(
-                        settings=self.settings,
-                        dense_embedding=embedding,
-                        sparse_vector=sparse_vectors[index] if sparse_vectors is not None else None,
-                    ),
-                    payload={
-                        "document_id": document.document_id,
-                        "chunk_id": chunk.chunk_id,
-                        "parent_id": chunk.parent_id,
-                        "title": document.title,
-                        "source_uri": document.source_uri,
-                        "file_type": document.file_type,
-                        "section_title": chunk.section_title,
-                        "page_start": chunk.page_start,
-                        "page_end": chunk.page_end,
-                        "language": document.language,
-                        "embedding_model": chunk.embedding_model,
-                    },
-                )
-            )
-        if points:
-            self.qdrant.upsert(collection_name=self.settings.qdrant_collection, points=points)
-
-    def _sparse_encoder(self) -> BM25SparseEncoder:
-        if self.sparse_encoder is None:
-            self.sparse_encoder = BM25SparseEncoder(self.settings)
-        return self.sparse_encoder
+        self.vector_indexer.index(document=document, chunks=chunks, embeddings=embeddings)
 
     def _delete_qdrant_points(self, chunks: list[Chunk]) -> None:
-        point_ids = [_qdrant_point_id(chunk.chunk_id) for chunk in chunks]
-        if not point_ids:
-            return
+        self.vector_indexer.cleanup(chunks)
+
+    def _cleanup_failed_ingest(
+        self,
+        db: Session,
+        *,
+        document_id: str,
+        chunks: list[Chunk],
+    ) -> None:
         try:
-            self.qdrant.delete(
-                collection_name=self.settings.qdrant_collection,
-                points_selector=models.PointIdsList(points=point_ids),
-            )
+            self._delete_qdrant_points(chunks)
+        except Exception:
+            pass
+        try:
+            self._delete_document_rows(db, document_id)
         except Exception:
             pass
 
@@ -264,6 +273,7 @@ class IngestionService:
     def _delete_document_rows(db: Session, document_id: str) -> None:
         db.rollback()
         db.execute(delete(Chunk).where(Chunk.document_id == document_id))
+        db.execute(delete(ParentBlock).where(ParentBlock.document_id == document_id))
         db.execute(delete(Document).where(Document.document_id == document_id))
         db.commit()
 
@@ -274,41 +284,24 @@ def _chunk_loaded_document(
     target_tokens: int,
     overlap_tokens: int,
 ) -> list[dict[str, Any]]:
-    if loaded.file_type == "pdf":
-        items: list[dict[str, Any]] = []
-        for page in loaded.pages:
-            drafts = chunk_text(
-                page.text,
-                target_tokens=target_tokens,
-                overlap_tokens=overlap_tokens,
-            )
-            for draft in drafts:
-                items.append(
-                    {
-                        "text": draft.text,
-                        "section_title": draft.section_title,
-                        "page_start": page.page_number,
-                        "page_end": page.page_number,
-                        "token_count": draft.token_count,
-                    }
-                )
-        return items
-
-    drafts = chunk_text(
-        loaded.text,
-        target_tokens=target_tokens,
-        overlap_tokens=overlap_tokens,
-    )
     return [
-        {
-            "text": draft.text,
-            "section_title": draft.section_title,
-            "page_start": None,
-            "page_end": None,
-            "token_count": draft.token_count,
-        }
-        for draft in drafts
+        _chunk_input_payload(item)
+        for item in chunker_registry.get("default").chunk(
+            loaded,
+            target_tokens=target_tokens,
+            overlap_tokens=overlap_tokens,
+        )
     ]
+
+
+def _chunk_input_payload(item: ChunkInput) -> dict[str, Any]:
+    return {
+        "text": item.text,
+        "section_title": item.section_title,
+        "page_start": item.page_start,
+        "page_end": item.page_end,
+        "token_count": item.token_count,
+    }
 
 
 def _summary_payload(paths: list[str], summaries: list[IngestedDocumentSummary]) -> dict[str, Any]:
@@ -334,81 +327,32 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _parent_blocks_for_loaded_document(document_id: str, loaded: LoadedDocument) -> list[ParentBlock]:
-    if loaded.file_type == "pdf":
-        parents = []
-        for page in loaded.pages:
-            if page.page_number is None or not page.text.strip():
-                continue
-            parents.append(
-                ParentBlock(
-                    parent_id=_parent_id(document_id, page.page_number),
-                    document_id=document_id,
-                    parent_type="page",
-                    page_start=page.page_number,
-                    page_end=page.page_number,
-                    text=page.text,
-                    child_ids_json=[],
-                    metadata_json={
-                        "source_path": str(loaded.path),
-                        "title": loaded.title,
-                        "parent_type": "page",
-                    },
-                )
-            )
-        return parents
-
-    return [
-        ParentBlock(
-            parent_id=_parent_id(document_id, 0),
-            document_id=document_id,
-            parent_type="document",
-            page_start=0,
-            page_end=0,
-            text=loaded.text,
-            child_ids_json=[],
-            metadata_json={
-                "source_path": str(loaded.path),
-                "title": loaded.title,
-                "parent_type": "document",
-            },
-        )
-    ]
+def _parent_blocks_for_loaded_document(
+    document_id: str,
+    loaded: LoadedDocument,
+) -> list[ParentBlock]:
+    return parent_block_builder_registry.get("default").build(
+        document_id=document_id,
+        loaded=loaded,
+    )
 
 
 def _parent_id_for_chunk(
     document_id: str,
-    item: dict[str, Any],
+    item: dict[str, Any] | ChunkInput,
     parent_by_page: dict[int, ParentBlock],
 ) -> str | None:
+    if isinstance(item, ChunkInput):
+        return _parent_id_for_chunk_input(document_id, item, parent_by_page)
     page_start = item.get("page_start")
     if isinstance(page_start, int) and page_start in parent_by_page:
         return parent_by_page[page_start].parent_id
     return _parent_id(document_id, 0) if parent_by_page else None
 
 
-def _parent_id(document_id: str, page_number: int) -> str:
-    raw = f"{document_id}:page:{page_number}"
-    return f"par_{uuid5(NAMESPACE_URL, raw).hex[:32]}"
-
-
-def _point_vector(
-    *,
-    settings: Settings,
-    dense_embedding: list[float],
-    sparse_vector: models.SparseVector | None,
-):
-    if sparse_vector is None:
-        return dense_embedding
-    return {
-        settings.qdrant_dense_vector_name: dense_embedding,
-        settings.qdrant_sparse_vector_name: sparse_vector,
-    }
+def _point_vector(**kwargs):
+    return _builtin_point_vector(**kwargs)
 
 
 def _qdrant_point_id(chunk_id: str) -> str:
-    raw_uuid = chunk_id.removeprefix("chk_")
-    try:
-        return str(UUID(raw_uuid))
-    except ValueError:
-        return str(uuid5(NAMESPACE_URL, chunk_id))
+    return _builtin_qdrant_point_id(chunk_id)

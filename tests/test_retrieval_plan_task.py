@@ -172,7 +172,51 @@ def test_cache_key_ignores_volatile_plan_and_task_ids() -> None:
     assert first == second
 
 
-def test_sql_and_graph_units_compile_to_skipped_tasks() -> None:
+def test_cache_key_changes_when_global_reranker_policy_changes() -> None:
+    settings = Settings(openai_api_key=None, cache_enabled=True)
+    base_options = {"retrieval_mode": "hybrid", "cache_policy": "enabled"}
+
+    enabled = make_cache_key(
+        query="What is 3M FY2018 capex?",
+        filters={},
+        settings=settings,
+        top_k=8,
+        options={**base_options, "cross_provider_reranker_enabled": True},
+    )
+    disabled = make_cache_key(
+        query="What is 3M FY2018 capex?",
+        filters={},
+        settings=settings,
+        top_k=8,
+        options={**base_options, "cross_provider_reranker_enabled": False},
+    )
+
+    assert enabled != disabled
+
+
+def test_cache_key_changes_when_rerank_alias_changes() -> None:
+    settings = Settings(openai_api_key=None, cache_enabled=True, reranker_enabled=True)
+    base_options = {"retrieval_mode": "hybrid", "cache_policy": "enabled"}
+
+    default_key = make_cache_key(
+        query="What is 3M FY2018 capex?",
+        filters={},
+        settings=settings,
+        top_k=8,
+        options=base_options,
+    )
+    disabled_key = make_cache_key(
+        query="What is 3M FY2018 capex?",
+        filters={},
+        settings=settings,
+        top_k=8,
+        options={**base_options, "rerank": False},
+    )
+
+    assert default_key != disabled_key
+
+
+def test_sql_unit_skips_but_graph_unit_is_ready_by_default() -> None:
     plan = QueryPlan(
         plan_id="plan_future",
         original_query="Who supplies Apple Vision Pro displays?",
@@ -195,12 +239,14 @@ def test_sql_and_graph_units_compile_to_skipped_tasks() -> None:
     tasks = tasks_from_plan(plan)
 
     assert [task.provider for task in tasks] == ["sql", "graph"]
-    assert all(task.provider_status == "skipped_non_executable" for task in tasks)
+    assert tasks[0].provider_status == "skipped_non_executable"
+    assert tasks[0].unsupported_reason == "provider_not_executable:sql"
+    assert tasks[1].provider_status == "ready"
+    assert tasks[1].unsupported_reason is None
     assert all(task.lanes == () for task in tasks)
-    assert all(task.unsupported_reason for task in tasks)
 
 
-def test_graph_unit_is_ready_when_explicitly_executable_but_sql_is_not() -> None:
+def test_graph_unit_stays_ready_when_explicitly_executable_but_sql_is_not() -> None:
     plan = QueryPlan(
         plan_id="plan_future_opt_in",
         original_query="Who supplies Apple Vision Pro displays?",
@@ -224,7 +270,29 @@ def test_graph_unit_is_ready_when_explicitly_executable_but_sql_is_not() -> None
 
     assert [task.provider for task in tasks] == ["sql", "graph"]
     assert tasks[0].provider_status == "skipped_non_executable"
-    assert tasks[0].unsupported_reason == "provider_not_executable_in_v1:sql"
+    assert tasks[0].unsupported_reason == "provider_not_executable:sql"
     assert tasks[1].provider_status == "ready"
     assert tasks[1].unsupported_reason is None
     assert tasks[1].lanes == ()
+
+
+def test_graph_unit_skips_when_runtime_is_hybrid_only() -> None:
+    plan = QueryPlan(
+        plan_id="plan_graph_hybrid_only",
+        original_query="Who supplies Apple Vision Pro displays?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_graph",
+                purpose="supply_chain_discovery",
+                text="Apple Vision Pro display suppliers",
+                provider="graph",
+            ),
+        ),
+    )
+
+    task = tasks_from_plan(plan, executable_providers=("hybrid",))[0]
+
+    assert task.provider == "graph"
+    assert task.provider_status == "skipped_non_executable"
+    assert task.unsupported_reason == "provider_not_executable:graph"
+    assert task.lanes == ()

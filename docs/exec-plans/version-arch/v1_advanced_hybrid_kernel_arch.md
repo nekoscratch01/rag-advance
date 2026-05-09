@@ -8,17 +8,18 @@
 
 ```text
 最终架构：hybrid / sql / graph 三个 provider。
-V1 默认 runtime：只启用 hybrid provider。
+V1 baseline：只启用 hybrid provider。
+当前默认 Atlas runtime：hybrid + graph 可执行，仍由 QueryPlan 决定是否调用 graph。
 V1 provider 实现：TextHybridProvider。
 SQLProvider：未实现。
-GraphProvider：V3.0 已有 opt-in walking skeleton，默认不属于 V1 hybrid runtime。
+GraphProvider：V3.0 walking skeleton 已默认注册为可执行 provider；不声明质量提升。
 ```
 
 ---
 
 ## 1. Runtime 总览
 
-V1 是单次问答的 hybrid-executable Evidence Kernel：
+V1 baseline 是单次问答的 hybrid-executable Evidence Kernel；当前默认 runtime 已在 ProviderRouter 下同时注册 hybrid 与 graph：
 
 ```text
 POST /v1/query
@@ -26,11 +27,16 @@ POST /v1/query
   -> QueryOrchestrator
   -> QueryPlan
   -> RetrievalTask
-  -> TextHybridProvider
-  -> Qdrant dense + Qdrant BM25 sparse
-  -> Python Weighted RRF
-  -> optional CrossEncoder reranker
-  -> parent-child EvidencePack
+  -> ProviderRouter
+       hybrid -> TextHybridProvider
+              -> Qdrant dense + Qdrant BM25 sparse
+              -> provider-local Python Weighted RRF
+       graph  -> GraphProvider local/path walking skeleton, only when QueryPlan selects graph
+       sql    -> skipped_non_executable
+  -> CandidateAdapter
+  -> CandidateFusion
+  -> optional global CrossEncoder reranker
+  -> EvidenceBuilder / parent-child EvidencePack
   -> Evidence Evaluator
   -> Answer Generator
   -> Citation Verifier
@@ -75,33 +81,49 @@ FinanceBench JSONL 是冻结测评产物，不是 runtime 存储。
 |---|---|---:|---|
 | `hybrid` | `src/atlas/retrieval/providers/text_hybrid/` | 是 | V1 默认 provider。内部有 dense、BM25、metric_alias、section、table textual lanes。 |
 | `sql` | 无 `SQLProvider` runtime | 否 | V4 候选。V1 不做 Text-to-SQL、计算、cell provenance。 |
-| `graph` | `src/atlas/retrieval/providers/graph/` | 默认否；V3.0 opt-in | V3.0 walking skeleton：local/path、Postgres grounding、trace auditability；不声明质量提升，不默认参与 V1。 |
+| `graph` | `src/atlas/retrieval/providers/graph/` | 当前默认是；可显式关闭 | V3.0 walking skeleton：local/path、Postgres grounding、trace auditability；不声明质量提升；只在 QueryPlan 选择 graph 时运行。 |
 
 配置入口：
 
 ```text
 src/atlas/core/config.py
   Settings.query_planner_known_providers = "hybrid,sql,graph"
-  Settings.query_runtime_executable_providers = "hybrid"
+  Settings.query_runtime_executable_providers = "hybrid,graph"
   IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid", "graph")
   known_query_providers(settings)
-  executable_query_providers(settings)
+  executable_query_providers(settings) = requested ∩ registered_runtime_provider ∩ known - non_executable(sql)
 ```
 
-依赖装配：
+Provider registry / dependency 装配：
 
 ```text
+src/atlas/core/registry.py
+  ComponentRegistry(namespace="retrieval_provider")
+
+src/atlas/retrieval/providers/registry.py
+  provider_registry built-ins = hybrid / graph
+  build_provider(name, ProviderBuildContext)
+
 src/atlas/api/dependencies.py
-  默认 get_text_hybrid_provider() -> TextHybridProvider
-  默认 get_provider_router() -> ProviderRouter({"hybrid": TextHybridProvider})
-  get_graph_provider() -> GraphProvider(PostgresGraphStore)
-  V3.0 opt-in -> ProviderRouter({"hybrid": TextHybridProvider, "graph": GraphProvider})
+  executable_query_providers(settings)
+  build_provider("hybrid" | "graph", ProviderBuildContext)
+  get_provider_router() -> ProviderRouter(..., session_factory=SessionLocal)
 ```
 
-V1 的 `QueryPlan` 可以保留最终 provider vocabulary：
+Router 注册边界：
 
 ```text
-ProviderName = Literal["hybrid", "sql", "graph"]
+provider 必须显式继承 RetrievalProvider ABC。
+sql 是 known semantic provider，但不是 executable provider，注册 sql 会被拒绝。
+dense / bm25 / sparse / table / section / metric_alias 是 internal lanes，注册为 provider 会被拒绝。
+unknown provider 会在 router 注册期失败，而不是运行时静默降级。
+```
+
+V1 的 `QueryPlan` provider 字段是 registry-facing string，但 reserved internal lanes 会被 schema 拒绝：
+
+```text
+known semantic providers = hybrid / sql / graph
+reserved internal lanes = dense / bm25 / sparse / table / section / metric_alias
 ```
 
 当前 semantic plan 可以使用：
@@ -110,19 +132,19 @@ ProviderName = Literal["hybrid", "sql", "graph"]
 provider = "hybrid" | "sql" | "graph"
 ```
 
-默认 V1 execution 只能执行：
+当前默认 execution 能执行：
 
 ```text
-provider = "hybrid"
+provider = "hybrid" | "graph"
 ```
 
-V3.0 graph opt-in 的配置口径是：
+V1 baseline 回退口径是：
 
 ```bash
-ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid,graph
+ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid
 ```
 
-Phase 5 已把这个配置接入依赖装配和 QueryRuntime auto-wire。默认 V1 结论不变：hybrid-only。
+Phase 6 已将 graph 从 opt-in 提升为默认可执行 provider；这不等于 graph-first，实际调用仍由 QueryPlan 控制。
 
 如果本地代码仍看到 `retrievers` 字段，应按 provider 语义解释：
 
@@ -221,18 +243,18 @@ build_fallback_plan(...)
 
 ```text
 schema 知道 hybrid / sql / graph。
-默认 runtime 通过 ProviderRouter 只注册 TextHybridProvider。
+默认 runtime 通过 ProviderRouter 注册 TextHybridProvider 和 GraphProvider。
 如果 LLM 为 SQL-like 或 graph-like query 输出 sql / graph，这是合法 semantic plan。
 sql 在 V1 不可执行，会生成 skipped_non_executable ProviderResult。
-graph 只有在 V3.0 opt-in 装配后才可执行；默认 V1 仍 skipped_non_executable。
+graph 默认可执行 local/path walking skeleton；仍不能绕过 Evidence Kernel。
 ```
 
 V1 架构要求：
 
 ```text
 prompt 必须声明 known_providers = ["hybrid", "sql", "graph"]。
-默认 runtime 必须声明 executable_providers = ["hybrid"]。
-V3.0 opt-in runtime 可声明 executable_providers = ["hybrid", "graph"]。
+默认 runtime 声明 executable_providers = ["hybrid", "graph"]。
+V1 baseline 可显式声明 executable_providers = ["hybrid"]。
 non-executable provider 必须进入 trace，不进入 evidence。
 默认不自动 hybrid_backfill。
 ```
@@ -258,8 +280,8 @@ src/atlas/query_orchestrator/prompts.py
 prompts.py 会把 known_query_providers(settings) 注入 planner instructions。
 llm_planner.py 会按 known_providers 生成 schema enum。
 validation 失败会把错误反馈给 LLM 重试。
-ProviderRouter 会把默认不可执行的 sql/graph 编译为 skipped_non_executable provider result。
-V3.0 opt-in 注册 GraphProvider 后，graph task 可执行 local/path，但仍不能绕过 Evidence Kernel。
+ProviderRouter 会把不可执行的 sql 编译为 skipped_non_executable provider result。
+默认注册 GraphProvider 后，graph task 可执行 local/path，但仍不能绕过 Evidence Kernel。
 ```
 
 ### 4.2 Compound Unit Retry
@@ -280,7 +302,7 @@ V1 正确处理：
 1. validator 报 compound_unit_must_be_split。
 2. LLM planner 带错误原因重试。
 3. 重试 prompt 要求输出 single-provider units。
-4. sql/graph 是 known provider；它们是 valid plan、non-executable execution。
+4. sql/graph 是 known provider；sql 是 valid plan、non-executable execution，graph 在当前默认 runtime 中是 planner-selected executable provider。
 ```
 
 代码锚点：
@@ -600,7 +622,7 @@ formula verification
 
 ## 8. Graph 边界
 
-V1 默认 runtime 没有启用 GraphProvider。V3.0 已在以下路径实现 opt-in walking skeleton：
+当前默认 runtime 已启用 GraphProvider。V3.0 已在以下路径实现 walking skeleton：
 
 ```text
 src/atlas/retrieval/providers/graph/
@@ -628,7 +650,7 @@ graph node / edge / community summary -> VIP EvidenceBlock -> answer
 5. 没有 source anchor 的 graph claim 不能作为 citation。
 ```
 
-AAPL/MSFT/Vision Pro 这类 query 的 semantic plan 可以包含 graph/sql 意图。默认 V1 execution 只执行 hybrid，不能声称执行了 graph traversal。V3.0 opt-in graph 只能执行 local/path walking skeleton；没有质量测评前，不能声称 graph 改善检索或答案可靠性。
+AAPL/MSFT/Vision Pro 这类 query 的 semantic plan 可以包含 graph/sql 意图。当前默认 runtime 会执行 graph task 的 local/path walking skeleton；SQL 仍 skipped。没有质量测评前，不能声称 graph 改善检索或答案可靠性。
 
 ---
 
@@ -661,10 +683,11 @@ EvidenceBlock
 EvidencePack
 ```
 
-V1 EvidenceBlock 的 contract provider 应为：
+EvidenceBlock 的 contract provider 应为：
 
 ```text
-hybrid
+V1 baseline: hybrid
+current default: hybrid | graph
 ```
 
 当前代码有兼容命名：
@@ -750,7 +773,7 @@ Cache 事实：
 
 ```text
 backend: Postgres query_cache
-schema: atlas-query-cache-v2
+schema: atlas-query-cache-v3
 ```
 
 V1 没有 Redis cache。Redis Queue 属于 V2 Research Runtime。
@@ -816,7 +839,7 @@ V1 trace family：
 
 ### 12.1 Generation LLM I/O observability
 
-V1 `/v1/query` 和 V3.0 graph opt-in runtime 共用 QueryRuntime 生成链路。生成答案时，Answer Generator 的 LLM I/O 不再写入 `query_runs.details_json` 或 `answers.payload_json` 的 raw JSON 旁路。
+V1 `/v1/query` 和 V3.0 graph-enabled runtime 共用 QueryRuntime 生成链路。生成答案时，Answer Generator 的 LLM I/O 不再写入 `query_runs.details_json` 或 `answers.payload_json` 的 raw JSON 旁路。
 
 ```text
 query_runs.details_json.llm_io -> status + answer_llm_call_id/error/reason
@@ -897,11 +920,19 @@ v1_trace.candidates[].payload.metadata.fusion
 v1_trace.candidates[].payload.metadata.lane_attributions
 ```
 
-Multi-provider opt-in 时，`ProviderRouter` 会在 provider evidence 合并边界把最终进入
-runtime 的 evidence 统一重编号为全局 `c1..cN`。provider 内部的局部 evidence id /
+Multi-provider runtime 下，`ProviderRouter` 先收集 provider candidates，再由
+`CandidateFusion` 做跨 provider 去重、provenance/source_anchor 合并和全局 candidate
+window。V4 preflight 后，candidate contract 带 `rerankable`、`fusion_policy`
+和 `structured_payload`；global reranker 只看 rerankable text candidates，`pinned` /
+`supporting` structured candidates 不走 CrossEncoder，但仍可进入 EvidencePack。
+`EvidenceBuilder` 再把全局排序后的 candidates 编成 prompt evidence，并统一重编号为全局 `c1..cN`。provider 内部的局部 evidence id /
 rank 不改写，而是投影到 `retrieval_trace.top_k[]` 的
 `original_evidence_id`、`provider_local_evidence_id`、`provider_local_rank` 和
 `provider_local_provider`，用于把 LLM citation 映射回 provider-local trace。
+
+面向 API / `details_json` 的 provider failure trace 会做轻量 scrub：不暴露
+`error_message`、`planned_text` 等可能包含原始 query / planner text 的字段；内部
+`ProviderResult.trace` 仍可保留 debugging 信息供 router 组装和测试断言使用。
 
 TODO：
 
@@ -977,10 +1008,10 @@ cache hit/miss
 Compare AAPL and MSFT exposure to Vision Pro based on annual report evidence.
 ```
 
-V1 不能执行：
+当前 runtime 仍不声明：
 
 ```text
-Graph traversal over Vision Pro hub node
+full GraphRAG / hub-quality graph traversal claim
 SQL mention count
 structured exposure calculation
 cell provenance lookup
@@ -992,8 +1023,8 @@ V1 应执行：
 1. QueryOrchestrator 读取 known_providers = ["hybrid", "sql", "graph"]。
 2. Planner 生成 semantic retrieval_units，可包含 hybrid/sql/graph。
 3. RetrievalTask 编译 metadata_filter，例如 filing_type / document_ids。
-4. ProviderRouter 只执行 executable provider = ["hybrid"]。
-5. sql/graph tasks 写入 skipped_non_executable ProviderResult。
+4. ProviderRouter 按 retrieval_tasks 执行默认 executable provider = ["hybrid", "graph"]。
+5. sql tasks 写入 skipped_non_executable ProviderResult；graph tasks 只有被 QueryPlan 选中时才执行 local/path。
 6. TextHybridProvider 对 hybrid unit 执行 dense_text = unit.text。
 7. TextHybridProvider 对 hybrid unit 执行 sparse_text = unit.text + should_terms + repeat(must_have_terms, 3)。
 8. Qdrant dense / sparse 分别召回 source chunks。
@@ -1064,18 +1095,23 @@ retrieval_units:
 | 架构节点 | 模块 | API | DB / payload | Eval |
 |---|---|---|---|---|
 | QueryRuntime | `query_runtime/service.py` | `POST /v1/query` | `query_runs.details_json`、轻量 `details_json.llm_io`、`llm_calls` | total latency、confidence |
+| Backend Registry | `backends/` | runtime construction | backend names / config errors | backend replaceability |
+| Ingestion Registry | `ingestion/contracts.py`、`ingestion/registry.py` | ingest API | loader/parser/chunker/indexer trace boundary | ingestion replaceability |
 | Query Orchestrator | `query_orchestrator/service.py` | `POST /v1/query/plan` | `query_plans.payload_json` | planner latency、unknown provider rate |
 | LLM Planner | `query_orchestrator/llm_planner.py` | plan API | `planner`、`model` metadata | retry/fallback rate |
 | LLM Client Adapter | `llm/clients/` | planner / answer generator | model usage、raw provider metadata | provider error rate、latency |
 | Prompt Builder | `query_orchestrator/prompts.py` | plan API | known/executable providers metadata | prompt compliance |
 | Validator | `query_orchestrator/validator.py` | plan API | validation warnings/reasons | validation failure buckets |
 | RetrievalTask compiler | `retrieval/models/retrieval_task.py` | plan/retrieve/query | `retrieval_tasks.payload_json` | task count、unit coverage |
-| ProviderRouter | `retrieval/router.py` | retrieve/query | `provider_router_trace`、`provider_results` | skipped_non_executable rate |
+| Provider ABC / Registry | `retrieval/providers/base.py`、`retrieval/providers/registry.py`、`core/registry.py` | retrieve/query | provider names、registration errors | provider registration coverage |
+| ProviderRouter | `retrieval/router.py` | retrieve/query | `provider_router_trace`、`provider_results` | skipped_non_executable rate、provider latency |
 | TextHybridProvider | `retrieval/providers/text_hybrid/provider.py` | retrieve/query | `retrieval_results`、`candidates` | retrieval latency |
+| GraphProvider | `retrieval/providers/graph/provider.py` | retrieve/query | graph candidates、source anchors、graph trace | graph grounding coverage |
 | Lanes | `retrieval/providers/text_hybrid/lanes.py` | retrieve/query | `lane_trace`、`lane_attributions` | lane contribution |
 | Dense adapter | `retrieval/providers/text_hybrid/adapters/dense.py` | retrieve/query | dense rank/score | dense hit@k |
 | BM25 adapter | `retrieval/providers/text_hybrid/adapters/bm25.py` | retrieve/query | lexical rank/score | sparse hit@k |
-| Fusion | `retrieval/ranking/fusion.py` | retrieve/query | `fusion`、`lane_contributions` | RRF ablation |
+| Provider-local Fusion | `retrieval/ranking/fusion.py` | retrieve/query | `fusion`、`lane_contributions` | RRF ablation |
+| CandidateAdapter / CandidateFusion | `retrieval/candidate_adapter.py`、`retrieval/candidate_fusion.py` | retrieve/query | cross-provider fusion、provider_provenance、source_anchors | cross-provider dedupe / rerank order |
 | Reranker | `retrieval/ranking/reranker.py` | retrieve/query | rerank rank/score/model | reranker lift |
 | Evidence Builder | `query_runtime/evidence_builder.py` | query | `evidence_blocks`、`evidence_packs` | evidence doc/page hit |
 | Answer Generator | `query_runtime/service.py` | query | `answers.answer_call_id`、`llm_calls`、`llm_call_evidence`、generation event | answer metrics、usage |
@@ -1104,8 +1140,8 @@ Table Lane:
   - 不引入 SQL / calculation / cell provenance 到 V1
 
 Graph:
-  - 默认 V1 runtime 保持未启用
-  - V3.0 opt-in GraphProvider 已作为 local/path candidate generator walking skeleton 落地
+  - 默认 Atlas runtime 已注册 GraphProvider
+  - V3.0 GraphProvider 已作为 local/path candidate generator walking skeleton 落地
   - 继续补 hub node explosion 防护测评和 graph retrieval eval
 
 Eval:
@@ -1124,8 +1160,8 @@ V1 的真实架构不是“三个 provider 都已经实现”。
 
 ```text
 Atlas 已经把 Evidence Kernel 的 provider contract 预留为 hybrid / sql / graph。
-V1 默认 runtime 当前只启用 hybrid。
+V1 baseline 只启用 hybrid；当前默认 Atlas runtime 已启用 hybrid + graph。
 TextHybridProvider 是 V1 默认 provider 实现。
-V3.0 GraphProvider 已作为 opt-in walking skeleton 存在，但不默认启用，也不提供质量提升声明。
+V3.0 GraphProvider 已作为默认可执行 walking skeleton 存在，但不提供质量提升声明。
 SQL 在 V1 中仍只能作为未来架构上下文出现，不能出现在 executable plan 或答案事实里。
 ```

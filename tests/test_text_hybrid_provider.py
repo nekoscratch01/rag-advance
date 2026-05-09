@@ -9,6 +9,7 @@ from atlas.query_runtime.service import QueryRuntime
 from atlas.retrieval.models.candidate import Candidate
 from atlas.retrieval.models.evidence import Evidence
 from atlas.retrieval.contracts import ProviderResult
+from atlas.retrieval.providers.base import RetrievalContext, RetrievalProvider
 from atlas.retrieval.providers.text_hybrid import TextHybridProvider
 from atlas.retrieval.models.retrieval_task import tasks_from_plan
 
@@ -114,7 +115,9 @@ class _FakeDB:
         self.commits += 1
 
 
-class _EmptyProvider:
+class _EmptyProvider(RetrievalProvider):
+    provider_name = "hybrid"
+
     def __init__(self, pack) -> None:
         self.pack = pack
 
@@ -137,6 +140,17 @@ class _EmptyProvider:
             evidence=(),
             evidence_pack=self.pack,
             trace={"provider": "text_hybrid", "provider_status": "empty"},
+        )
+
+    async def aretrieve_candidates(self, context: RetrievalContext):
+        return self.retrieve_provider_result(
+            context.db,
+            query=context.query,
+            top_k=context.top_k,
+            filters=context.filters,
+            options=context.options,
+            query_plan=context.query_plan,
+            retrieval_tasks=context.retrieval_tasks,
         )
 
 
@@ -233,6 +247,37 @@ def test_text_hybrid_provider_executes_v1_lanes_from_retrieval_tasks() -> None:
     assert evidence[0].metadata["text_hybrid_provider"]["fusion"]["backend"] == "weighted_rrf"
     assert evidence[0].metadata["retrieval_unit_id"] == "u0"
     assert evidence[0].metadata["fusion_score"] is not None
+
+
+def test_text_hybrid_provider_lane_top_k_respects_router_candidate_window() -> None:
+    provider, dense, bm25 = _provider()
+    plan = QueryPlan(
+        plan_id="plan_window",
+        original_query="What was 3M FY2018 capex?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u0",
+                purpose="original",
+                text="3M FY2018 capex",
+                provider="hybrid",
+                top_k=3,
+                metadata={"internal_lanes": ["dense", "bm25"]},
+            ),
+        ),
+    )
+
+    provider.retrieve_provider_result(
+        object(),
+        query=plan.original_query,
+        top_k=30,
+        filters={},
+        options={"retrieval_mode": "hybrid_rrf"},
+        query_plan=plan,
+        retrieval_tasks=tasks_from_plan(plan),
+    )
+
+    assert dense.calls[0]["top_k"] == 30
+    assert bm25.calls[0]["top_k"] == 30
 
 
 def test_text_hybrid_provider_skips_unsupported_provider_tasks_without_fake_evidence() -> None:
