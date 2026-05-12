@@ -1583,6 +1583,649 @@ def _apply_pre_create_observability_migrations() -> None:
             conn.execute(text(statement))
 
 
+def _v4_structured_storage_migration_statements() -> list[str]:
+    return [
+        """
+        create table if not exists structured_artifacts (
+            artifact_id varchar(64) primary key,
+            schema_version varchar(64) not null,
+            artifact_type varchar(64) not null,
+            document_id varchar(64),
+            ingestion_run_id varchar(64),
+            materialization_policy varchar(16) not null default 'facts',
+            status varchar(32) not null default 'completed',
+            artifact_root_path text,
+            manifest_path text,
+            raw_artifacts_path text,
+            payload_hash varchar(128),
+            artifact_counts_json jsonb not null default '{}'::jsonb,
+            materialized_counts_json jsonb not null default '{}'::jsonb,
+            warnings_json jsonb not null default '[]'::jsonb,
+            errors_json jsonb not null default '[]'::jsonb,
+            metadata_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now(),
+            constraint ck_structured_artifacts_materialization_policy
+                check (materialization_policy in ('none', 'facts', 'full'))
+        )
+        """,
+        "alter table structured_artifacts add column if not exists schema_version varchar(64)",
+        "alter table structured_artifacts add column if not exists artifact_type varchar(64)",
+        "alter table structured_artifacts add column if not exists document_id varchar(64)",
+        "alter table structured_artifacts add column if not exists ingestion_run_id varchar(64)",
+        """
+        alter table structured_artifacts
+        add column if not exists materialization_policy varchar(16) not null default 'facts'
+        """,
+        """
+        alter table structured_artifacts
+        add column if not exists status varchar(32) not null default 'completed'
+        """,
+        "alter table structured_artifacts add column if not exists artifact_root_path text",
+        "alter table structured_artifacts add column if not exists manifest_path text",
+        "alter table structured_artifacts add column if not exists raw_artifacts_path text",
+        "alter table structured_artifacts add column if not exists payload_hash varchar(128)",
+        """
+        alter table structured_artifacts
+        add column if not exists artifact_counts_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table structured_artifacts
+        add column if not exists materialized_counts_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table structured_artifacts
+        add column if not exists warnings_json jsonb not null default '[]'::jsonb
+        """,
+        """
+        alter table structured_artifacts
+        add column if not exists errors_json jsonb not null default '[]'::jsonb
+        """,
+        """
+        alter table structured_artifacts
+        add column if not exists metadata_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table structured_artifacts
+        add column if not exists created_at timestamp with time zone not null default now()
+        """,
+        """
+        update structured_artifacts
+        set schema_version = 'legacy_unknown'
+        where schema_version is null
+        """,
+        """
+        update structured_artifacts
+        set artifact_type = 'structured_artifact'
+        where artifact_type is null
+        """,
+        """
+        update structured_artifacts
+        set materialization_policy = 'facts'
+        where materialization_policy is null
+        """,
+        "update structured_artifacts set status = 'completed' where status is null",
+        """
+        update structured_artifacts
+        set artifact_counts_json = '{}'::jsonb
+        where artifact_counts_json is null
+        """,
+        """
+        update structured_artifacts
+        set materialized_counts_json = '{}'::jsonb
+        where materialized_counts_json is null
+        """,
+        """
+        update structured_artifacts
+        set warnings_json = '[]'::jsonb
+        where warnings_json is null
+        """,
+        """
+        update structured_artifacts
+        set errors_json = '[]'::jsonb
+        where errors_json is null
+        """,
+        """
+        update structured_artifacts
+        set metadata_json = '{}'::jsonb
+        where metadata_json is null
+        """,
+        "update structured_artifacts set created_at = now() where created_at is null",
+        "alter table structured_artifacts alter column schema_version set not null",
+        "alter table structured_artifacts alter column artifact_type set not null",
+        "alter table structured_artifacts alter column materialization_policy set default 'facts'",
+        "alter table structured_artifacts alter column materialization_policy set not null",
+        "alter table structured_artifacts alter column status set default 'completed'",
+        "alter table structured_artifacts alter column status set not null",
+        "alter table structured_artifacts alter column artifact_counts_json set default '{}'::jsonb",
+        "alter table structured_artifacts alter column artifact_counts_json set not null",
+        """
+        alter table structured_artifacts
+        alter column materialized_counts_json set default '{}'::jsonb
+        """,
+        "alter table structured_artifacts alter column materialized_counts_json set not null",
+        "alter table structured_artifacts alter column warnings_json set default '[]'::jsonb",
+        "alter table structured_artifacts alter column warnings_json set not null",
+        "alter table structured_artifacts alter column errors_json set default '[]'::jsonb",
+        "alter table structured_artifacts alter column errors_json set not null",
+        "alter table structured_artifacts alter column metadata_json set default '{}'::jsonb",
+        "alter table structured_artifacts alter column metadata_json set not null",
+        "alter table structured_artifacts alter column created_at set default now()",
+        "alter table structured_artifacts alter column created_at set not null",
+        _check_constraint_sql(
+            "structured_artifacts",
+            "ck_structured_artifacts_materialization_policy",
+            "materialization_policy in ('none', 'facts', 'full')",
+        ),
+        """
+        create index if not exists ix_structured_artifacts_document_id
+        on structured_artifacts (document_id)
+        """,
+        """
+        create index if not exists ix_structured_artifacts_ingestion_run_id
+        on structured_artifacts (ingestion_run_id)
+        """,
+        """
+        create index if not exists ix_structured_artifacts_schema_version
+        on structured_artifacts (schema_version)
+        """,
+        """
+        create index if not exists ix_structured_artifacts_status
+        on structured_artifacts (status)
+        """,
+        """
+        create table if not exists table_assets (
+            table_id varchar(128) primary key,
+            artifact_id varchar(64)
+                constraint fk_table_assets_artifact
+                references structured_artifacts(artifact_id) on delete set null,
+            document_id varchar(64),
+            page_start integer,
+            page_end integer,
+            table_title text,
+            source_type varchar(64) not null default 'unknown',
+            extraction_method varchar(128) not null default 'unknown',
+            extraction_confidence double precision,
+            row_count integer,
+            column_count integer,
+            metadata_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "alter table table_assets add column if not exists artifact_id varchar(64)",
+        "alter table table_assets add column if not exists document_id varchar(64)",
+        "alter table table_assets add column if not exists page_start integer",
+        "alter table table_assets add column if not exists page_end integer",
+        "alter table table_assets add column if not exists table_title text",
+        """
+        alter table table_assets
+        add column if not exists source_type varchar(64) not null default 'unknown'
+        """,
+        """
+        alter table table_assets
+        add column if not exists extraction_method varchar(128) not null default 'unknown'
+        """,
+        """
+        alter table table_assets
+        add column if not exists extraction_confidence double precision
+        """,
+        "alter table table_assets add column if not exists row_count integer",
+        "alter table table_assets add column if not exists column_count integer",
+        """
+        alter table table_assets
+        add column if not exists metadata_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table table_assets
+        add column if not exists created_at timestamp with time zone not null default now()
+        """,
+        "update table_assets set source_type = 'unknown' where source_type is null",
+        """
+        update table_assets
+        set extraction_method = 'unknown'
+        where extraction_method is null
+        """,
+        "update table_assets set metadata_json = '{}'::jsonb where metadata_json is null",
+        "update table_assets set created_at = now() where created_at is null",
+        "alter table table_assets alter column source_type set default 'unknown'",
+        "alter table table_assets alter column source_type set not null",
+        "alter table table_assets alter column extraction_method set default 'unknown'",
+        "alter table table_assets alter column extraction_method set not null",
+        "alter table table_assets alter column metadata_json set default '{}'::jsonb",
+        "alter table table_assets alter column metadata_json set not null",
+        "alter table table_assets alter column created_at set default now()",
+        "alter table table_assets alter column created_at set not null",
+        _foreign_key_constraint_sql(
+            "table_assets",
+            "fk_table_assets_artifact",
+            ("artifact_id",),
+            "structured_artifacts",
+            ("artifact_id",),
+            on_delete="set null",
+        ),
+        "create index if not exists ix_table_assets_artifact_id on table_assets (artifact_id)",
+        "create index if not exists ix_table_assets_document_id on table_assets (document_id)",
+        """
+        create index if not exists ix_table_assets_page_range
+        on table_assets (document_id, page_start, page_end)
+        """,
+        "create index if not exists ix_table_assets_source_type on table_assets (source_type)",
+        """
+        create table if not exists table_columns (
+            column_id varchar(128) primary key,
+            table_id varchar(128) not null
+                constraint fk_table_columns_table
+                references table_assets(table_id) on delete cascade,
+            column_index integer,
+            name text not null,
+            canonical_name varchar(256),
+            data_type varchar(64) not null default 'unknown',
+            unit varchar(64),
+            period varchar(64),
+            metadata_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now(),
+            constraint uq_table_columns_table_index unique (table_id, column_index)
+        )
+        """,
+        "alter table table_columns add column if not exists table_id varchar(128)",
+        "alter table table_columns add column if not exists column_index integer",
+        "alter table table_columns add column if not exists name text",
+        "alter table table_columns add column if not exists canonical_name varchar(256)",
+        """
+        alter table table_columns
+        add column if not exists data_type varchar(64) not null default 'unknown'
+        """,
+        "alter table table_columns add column if not exists unit varchar(64)",
+        "alter table table_columns add column if not exists period varchar(64)",
+        """
+        alter table table_columns
+        add column if not exists metadata_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table table_columns
+        add column if not exists created_at timestamp with time zone not null default now()
+        """,
+        "update table_columns set data_type = 'unknown' where data_type is null",
+        "update table_columns set name = '' where name is null",
+        "update table_columns set metadata_json = '{}'::jsonb where metadata_json is null",
+        "update table_columns set created_at = now() where created_at is null",
+        "alter table table_columns alter column table_id set not null",
+        "alter table table_columns alter column name set not null",
+        "alter table table_columns alter column data_type set default 'unknown'",
+        "alter table table_columns alter column data_type set not null",
+        "alter table table_columns alter column metadata_json set default '{}'::jsonb",
+        "alter table table_columns alter column metadata_json set not null",
+        "alter table table_columns alter column created_at set default now()",
+        "alter table table_columns alter column created_at set not null",
+        _foreign_key_constraint_sql(
+            "table_columns",
+            "fk_table_columns_table",
+            ("table_id",),
+            "table_assets",
+            ("table_id",),
+        ),
+        _unique_constraint_sql(
+            "table_columns",
+            "uq_table_columns_table_index",
+            ("table_id", "column_index"),
+        ),
+        "create index if not exists ix_table_columns_table_id on table_columns (table_id)",
+        """
+        create index if not exists ix_table_columns_canonical_name
+        on table_columns (canonical_name)
+        """,
+        "create index if not exists ix_table_columns_period on table_columns (period)",
+        """
+        create table if not exists table_profiles (
+            table_id varchar(128) primary key
+                constraint fk_table_profiles_table
+                references table_assets(table_id) on delete cascade,
+            artifact_id varchar(64),
+            document_id varchar(64),
+            row_count integer,
+            column_count integer,
+            numeric_column_count integer,
+            empty_cell_count integer,
+            profile_json jsonb not null default '{}'::jsonb,
+            warnings_json jsonb not null default '[]'::jsonb,
+            errors_json jsonb not null default '[]'::jsonb,
+            metadata_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "alter table table_profiles add column if not exists artifact_id varchar(64)",
+        "alter table table_profiles add column if not exists document_id varchar(64)",
+        "alter table table_profiles add column if not exists row_count integer",
+        "alter table table_profiles add column if not exists column_count integer",
+        "alter table table_profiles add column if not exists numeric_column_count integer",
+        "alter table table_profiles add column if not exists empty_cell_count integer",
+        """
+        alter table table_profiles
+        add column if not exists profile_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table table_profiles
+        add column if not exists warnings_json jsonb not null default '[]'::jsonb
+        """,
+        """
+        alter table table_profiles
+        add column if not exists errors_json jsonb not null default '[]'::jsonb
+        """,
+        """
+        alter table table_profiles
+        add column if not exists metadata_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table table_profiles
+        add column if not exists created_at timestamp with time zone not null default now()
+        """,
+        "update table_profiles set profile_json = '{}'::jsonb where profile_json is null",
+        "update table_profiles set warnings_json = '[]'::jsonb where warnings_json is null",
+        "update table_profiles set errors_json = '[]'::jsonb where errors_json is null",
+        "update table_profiles set metadata_json = '{}'::jsonb where metadata_json is null",
+        "update table_profiles set created_at = now() where created_at is null",
+        "alter table table_profiles alter column profile_json set default '{}'::jsonb",
+        "alter table table_profiles alter column profile_json set not null",
+        "alter table table_profiles alter column warnings_json set default '[]'::jsonb",
+        "alter table table_profiles alter column warnings_json set not null",
+        "alter table table_profiles alter column errors_json set default '[]'::jsonb",
+        "alter table table_profiles alter column errors_json set not null",
+        "alter table table_profiles alter column metadata_json set default '{}'::jsonb",
+        "alter table table_profiles alter column metadata_json set not null",
+        "alter table table_profiles alter column created_at set default now()",
+        "alter table table_profiles alter column created_at set not null",
+        _foreign_key_constraint_sql(
+            "table_profiles",
+            "fk_table_profiles_table",
+            ("table_id",),
+            "table_assets",
+            ("table_id",),
+        ),
+        "create index if not exists ix_table_profiles_artifact_id on table_profiles (artifact_id)",
+        "create index if not exists ix_table_profiles_document_id on table_profiles (document_id)",
+        """
+        create table if not exists table_rows (
+            row_id varchar(128) primary key,
+            table_id varchar(128) not null
+                constraint fk_table_rows_table
+                references table_assets(table_id) on delete cascade,
+            row_index integer,
+            row_label text,
+            canonical_metric varchar(256),
+            metadata_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now(),
+            constraint uq_table_rows_table_index unique (table_id, row_index)
+        )
+        """,
+        "alter table table_rows add column if not exists table_id varchar(128)",
+        "alter table table_rows add column if not exists row_index integer",
+        "alter table table_rows add column if not exists row_label text",
+        "alter table table_rows add column if not exists canonical_metric varchar(256)",
+        """
+        alter table table_rows
+        add column if not exists metadata_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table table_rows
+        add column if not exists created_at timestamp with time zone not null default now()
+        """,
+        "update table_rows set metadata_json = '{}'::jsonb where metadata_json is null",
+        "update table_rows set created_at = now() where created_at is null",
+        "alter table table_rows alter column table_id set not null",
+        "alter table table_rows alter column metadata_json set default '{}'::jsonb",
+        "alter table table_rows alter column metadata_json set not null",
+        "alter table table_rows alter column created_at set default now()",
+        "alter table table_rows alter column created_at set not null",
+        _foreign_key_constraint_sql(
+            "table_rows",
+            "fk_table_rows_table",
+            ("table_id",),
+            "table_assets",
+            ("table_id",),
+        ),
+        _unique_constraint_sql("table_rows", "uq_table_rows_table_index", ("table_id", "row_index")),
+        "create index if not exists ix_table_rows_table_id on table_rows (table_id)",
+        """
+        create index if not exists ix_table_rows_canonical_metric
+        on table_rows (canonical_metric)
+        """,
+        """
+        create table if not exists table_cells (
+            cell_id varchar(128) primary key,
+            table_id varchar(128) not null
+                constraint fk_table_cells_table
+                references table_assets(table_id) on delete cascade,
+            row_id varchar(128),
+            column_id varchar(128),
+            row_index integer,
+            column_index integer,
+            raw_value text,
+            normalized_value_json jsonb,
+            numeric_value double precision,
+            unit varchar(64),
+            bbox_json jsonb,
+            page_number integer,
+            provenance_json jsonb not null default '{}'::jsonb,
+            metadata_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "alter table table_cells add column if not exists table_id varchar(128)",
+        "alter table table_cells add column if not exists row_id varchar(128)",
+        "alter table table_cells add column if not exists column_id varchar(128)",
+        "alter table table_cells add column if not exists row_index integer",
+        "alter table table_cells add column if not exists column_index integer",
+        "alter table table_cells add column if not exists raw_value text",
+        "alter table table_cells add column if not exists normalized_value_json jsonb",
+        "alter table table_cells add column if not exists numeric_value double precision",
+        "alter table table_cells add column if not exists unit varchar(64)",
+        "alter table table_cells add column if not exists bbox_json jsonb",
+        "alter table table_cells add column if not exists page_number integer",
+        """
+        alter table table_cells
+        add column if not exists provenance_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table table_cells
+        add column if not exists metadata_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table table_cells
+        add column if not exists created_at timestamp with time zone not null default now()
+        """,
+        "update table_cells set provenance_json = '{}'::jsonb where provenance_json is null",
+        "update table_cells set metadata_json = '{}'::jsonb where metadata_json is null",
+        "update table_cells set created_at = now() where created_at is null",
+        "alter table table_cells alter column table_id set not null",
+        "alter table table_cells alter column provenance_json set default '{}'::jsonb",
+        "alter table table_cells alter column provenance_json set not null",
+        "alter table table_cells alter column metadata_json set default '{}'::jsonb",
+        "alter table table_cells alter column metadata_json set not null",
+        "alter table table_cells alter column created_at set default now()",
+        "alter table table_cells alter column created_at set not null",
+        _foreign_key_constraint_sql(
+            "table_cells",
+            "fk_table_cells_table",
+            ("table_id",),
+            "table_assets",
+            ("table_id",),
+        ),
+        "create index if not exists ix_table_cells_table_id on table_cells (table_id)",
+        "create index if not exists ix_table_cells_row_id on table_cells (row_id)",
+        "create index if not exists ix_table_cells_column_id on table_cells (column_id)",
+        "create index if not exists ix_table_cells_page_number on table_cells (page_number)",
+        """
+        create table if not exists financial_facts (
+            fact_id varchar(128) primary key,
+            artifact_id varchar(64)
+                constraint fk_financial_facts_artifact
+                references structured_artifacts(artifact_id) on delete set null,
+            company varchar(512) not null,
+            company_norm varchar(512),
+            fiscal_year integer,
+            fiscal_period varchar(64),
+            metric varchar(256) not null,
+            metric_norm varchar(256),
+            value double precision not null,
+            raw_value text,
+            unit varchar(64),
+            scale varchar(64),
+            currency varchar(16),
+            source_document_id varchar(64),
+            source_page integer,
+            source_table_id varchar(128),
+            source_cell_ids_json jsonb not null default '[]'::jsonb,
+            confidence double precision,
+            metadata_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now()
+        )
+        """,
+        "alter table financial_facts add column if not exists artifact_id varchar(64)",
+        "alter table financial_facts add column if not exists company varchar(512)",
+        "alter table financial_facts add column if not exists company_norm varchar(512)",
+        "alter table financial_facts add column if not exists fiscal_year integer",
+        "alter table financial_facts add column if not exists fiscal_period varchar(64)",
+        "alter table financial_facts add column if not exists metric varchar(256)",
+        "alter table financial_facts add column if not exists metric_norm varchar(256)",
+        "alter table financial_facts add column if not exists value double precision",
+        "alter table financial_facts add column if not exists raw_value text",
+        "alter table financial_facts add column if not exists unit varchar(64)",
+        "alter table financial_facts add column if not exists scale varchar(64)",
+        "alter table financial_facts add column if not exists currency varchar(16)",
+        "alter table financial_facts add column if not exists source_document_id varchar(64)",
+        "alter table financial_facts add column if not exists source_page integer",
+        "alter table financial_facts add column if not exists source_table_id varchar(128)",
+        """
+        alter table financial_facts
+        add column if not exists source_cell_ids_json jsonb not null default '[]'::jsonb
+        """,
+        "alter table financial_facts add column if not exists confidence double precision",
+        """
+        alter table financial_facts
+        add column if not exists metadata_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table financial_facts
+        add column if not exists created_at timestamp with time zone not null default now()
+        """,
+        "update financial_facts set source_cell_ids_json = '[]'::jsonb where source_cell_ids_json is null",
+        "update financial_facts set metadata_json = '{}'::jsonb where metadata_json is null",
+        "update financial_facts set created_at = now() where created_at is null",
+        "alter table financial_facts alter column company set not null",
+        "alter table financial_facts alter column metric set not null",
+        "alter table financial_facts alter column value set not null",
+        "alter table financial_facts alter column source_cell_ids_json set default '[]'::jsonb",
+        "alter table financial_facts alter column source_cell_ids_json set not null",
+        "alter table financial_facts alter column metadata_json set default '{}'::jsonb",
+        "alter table financial_facts alter column metadata_json set not null",
+        "alter table financial_facts alter column created_at set default now()",
+        "alter table financial_facts alter column created_at set not null",
+        _foreign_key_constraint_sql(
+            "financial_facts",
+            "fk_financial_facts_artifact",
+            ("artifact_id",),
+            "structured_artifacts",
+            ("artifact_id",),
+            on_delete="set null",
+        ),
+        "create index if not exists ix_financial_facts_artifact_id on financial_facts (artifact_id)",
+        "create index if not exists ix_financial_facts_company on financial_facts (company)",
+        "create index if not exists ix_financial_facts_metric on financial_facts (metric)",
+        """
+        create index if not exists ix_financial_facts_company_metric_year
+        on financial_facts (company, metric, fiscal_year)
+        """,
+        """
+        create index if not exists ix_financial_facts_source_table_id
+        on financial_facts (source_table_id)
+        """,
+        """
+        create index if not exists ix_financial_facts_source_document_id
+        on financial_facts (source_document_id)
+        """,
+        """
+        create table if not exists financial_fact_cells (
+            fact_id varchar(128) not null,
+            cell_id varchar(128) not null,
+            table_id varchar(128),
+            row_id varchar(128),
+            column_id varchar(128),
+            page_number integer,
+            bbox_json jsonb,
+            provenance_json jsonb not null default '{}'::jsonb,
+            metadata_json jsonb not null default '{}'::jsonb,
+            created_at timestamp with time zone not null default now(),
+            constraint pk_financial_fact_cells primary key (fact_id, cell_id),
+            constraint fk_financial_fact_cells_fact
+                foreign key (fact_id)
+                references financial_facts(fact_id)
+                on delete cascade
+        )
+        """,
+        "alter table financial_fact_cells add column if not exists fact_id varchar(128)",
+        "alter table financial_fact_cells add column if not exists cell_id varchar(128)",
+        "alter table financial_fact_cells add column if not exists table_id varchar(128)",
+        "alter table financial_fact_cells add column if not exists row_id varchar(128)",
+        "alter table financial_fact_cells add column if not exists column_id varchar(128)",
+        "alter table financial_fact_cells add column if not exists page_number integer",
+        "alter table financial_fact_cells add column if not exists bbox_json jsonb",
+        """
+        alter table financial_fact_cells
+        add column if not exists provenance_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table financial_fact_cells
+        add column if not exists metadata_json jsonb not null default '{}'::jsonb
+        """,
+        """
+        alter table financial_fact_cells
+        add column if not exists created_at timestamp with time zone not null default now()
+        """,
+        """
+        update financial_fact_cells
+        set provenance_json = '{}'::jsonb
+        where provenance_json is null
+        """,
+        """
+        update financial_fact_cells
+        set metadata_json = '{}'::jsonb
+        where metadata_json is null
+        """,
+        "update financial_fact_cells set created_at = now() where created_at is null",
+        "alter table financial_fact_cells alter column fact_id set not null",
+        "alter table financial_fact_cells alter column cell_id set not null",
+        "alter table financial_fact_cells alter column provenance_json set default '{}'::jsonb",
+        "alter table financial_fact_cells alter column provenance_json set not null",
+        "alter table financial_fact_cells alter column metadata_json set default '{}'::jsonb",
+        "alter table financial_fact_cells alter column metadata_json set not null",
+        "alter table financial_fact_cells alter column created_at set default now()",
+        "alter table financial_fact_cells alter column created_at set not null",
+        _primary_key_constraint_sql(
+            "financial_fact_cells",
+            "pk_financial_fact_cells",
+            ("fact_id", "cell_id"),
+        ),
+        _foreign_key_constraint_sql(
+            "financial_fact_cells",
+            "fk_financial_fact_cells_fact",
+            ("fact_id",),
+            "financial_facts",
+            ("fact_id",),
+        ),
+        """
+        create index if not exists ix_financial_fact_cells_fact_id
+        on financial_fact_cells (fact_id)
+        """,
+        """
+        create index if not exists ix_financial_fact_cells_cell_id
+        on financial_fact_cells (cell_id)
+        """,
+        """
+        create index if not exists ix_financial_fact_cells_table_id
+        on financial_fact_cells (table_id)
+        """,
+    ]
+
+
 def _apply_lightweight_migrations() -> None:
     statements = [
         """
@@ -3406,6 +4049,7 @@ def _apply_lightweight_migrations() -> None:
             ("record_id", "query_id"),
         ),
         "create index if not exists ix_citation_verifications_query_id on citation_verifications (query_id)",
+        *_v4_structured_storage_migration_statements(),
     ]
     with engine.begin() as conn:
         for statement in statements:

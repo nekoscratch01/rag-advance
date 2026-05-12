@@ -47,9 +47,19 @@ class ProviderRouter:
         reranker_top_k: int = 30,
         reranker_output_k: int | None = 8,
         max_context_tokens: int = 6000,
+        non_executable_providers: tuple[str, ...] | None = None,
     ) -> None:
         self.known_providers = tuple(str(provider).strip().lower() for provider in known_providers)
         self.providers = {}
+        self.non_executable_provider_names = frozenset(
+            str(provider).strip().lower()
+            for provider in (
+                NON_EXECUTABLE_PROVIDER_NAMES
+                if non_executable_providers is None
+                else non_executable_providers
+            )
+            if str(provider).strip()
+        )
         self.session_factory = session_factory
         self.candidate_fusion = candidate_fusion or CandidateFusion()
         self.reranker = reranker
@@ -65,7 +75,7 @@ class ProviderRouter:
                 raise ValueError(
                     f"internal_lane_registered_as_provider:{provider_name}"
                 )
-            if provider_name in NON_EXECUTABLE_PROVIDER_NAMES:
+            if provider_name in self.non_executable_provider_names:
                 raise ValueError(f"non_executable_provider_registered:{provider_name}")
             if provider_name not in self.known_providers:
                 raise ValueError(f"unknown_provider_registered:{provider_name}")
@@ -153,7 +163,7 @@ class ProviderRouter:
         for order, (provider_name, tasks) in enumerate(_group_tasks(retrieval_tasks).items()):
             executable_tasks: list[RetrievalTask] = []
             for task in tasks:
-                if _task_is_non_executable(task):
+                if _task_is_non_executable(task, self.non_executable_provider_names):
                     ordered_results.append(
                         (order, _skipped_result(task, known=provider_name in self.known_providers))
                     )
@@ -248,7 +258,7 @@ class ProviderRouter:
         for order, (provider_name, tasks) in enumerate(_group_tasks(retrieval_tasks).items()):
             executable_tasks: list[RetrievalTask] = []
             for task in tasks:
-                if _task_is_non_executable(task):
+                if _task_is_non_executable(task, self.non_executable_provider_names):
                     ordered_results.append(
                         (order, _skipped_result(task, known=provider_name in self.known_providers))
                     )
@@ -558,8 +568,11 @@ def _group_tasks(tasks: list[RetrievalTask]) -> dict[str, list[RetrievalTask]]:
     return grouped
 
 
-def _task_is_non_executable(task: RetrievalTask) -> bool:
-    if str(task.provider).strip().lower() in NON_EXECUTABLE_PROVIDER_NAMES:
+def _task_is_non_executable(
+    task: RetrievalTask,
+    non_executable_provider_names: frozenset[str] = NON_EXECUTABLE_PROVIDER_NAMES,
+) -> bool:
+    if str(task.provider).strip().lower() in non_executable_provider_names:
         return True
     if task.provider_status == "skipped_non_executable":
         return True
@@ -790,7 +803,7 @@ def _sanitize_trace_source_anchor(source_anchor: dict[str, Any], *, provider: st
     anchor_metadata = dict(anchor.get("metadata") or {})
     reported_provider = None
     raw_provider = anchor_metadata.get("provider")
-    if _provider_key(raw_provider) in _unsafe_provider_labels():
+    if _provider_key(raw_provider) in _unsafe_provider_labels() and _provider_key(raw_provider) != provider:
         reported_provider = str(raw_provider)
     anchor_metadata["provider"] = provider
     if reported_provider is not None:
@@ -815,18 +828,34 @@ def _router_status(results: list[ProviderResult]) -> str:
         return "empty"
     if all(result.status == "empty" for result in results):
         return "empty"
-    executed = any(result.status == "executed" for result in results)
+    executed = any(result.status in {"executed", "success"} for result in results)
     empty = any(result.status == "empty" for result in results)
     skipped = any(result.status == "skipped_non_executable" for result in results)
-    failed = any(result.status == "failed" for result in results)
+    diagnostic_empty = any(
+        result.status
+        in {
+            "skipped_not_table_query",
+            "cannot_answer_no_table",
+            "cannot_answer_low_confidence",
+            "unsupported_multi_table",
+        }
+        for result in results
+    )
+    failed = any(
+        result.status
+        in {"failed", "compiler_failed", "validation_failed", "execution_failed", "timeout"}
+        for result in results
+    )
     if failed and executed:
         return "partial"
     if failed:
         return "failed"
-    if (executed or empty) and skipped:
+    if (executed or empty) and (skipped or diagnostic_empty):
         return "partial"
     if executed or empty:
         return "executed"
+    if diagnostic_empty:
+        return "empty"
     return "skipped_non_executable"
 
 

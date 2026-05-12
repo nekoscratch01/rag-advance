@@ -49,9 +49,14 @@ V3.0 Atlas GraphProvider
   实际架构：docs/exec-plans/version-arch/v3_graph_provider_arch.md
 
 V4 Preflight Atlas Industrialization
-  状态：V4 SQLProvider 前置工业化接口已实现
-  边界：backend registry、typed candidate policy、ingestion registry、async facade；SQLProvider 尚未实现
+  状态：V4 前置工业化接口已实现；Phase 1 opt-in offline ingestion/write-path proof 已接入；SQLProvider V1 受控单表 Text-to-SQL proof 已接入
+  边界：backend registry、typed candidate policy、ingestion registry、async facade、structured artifact writer；SQLProvider 默认不执行，只有 sql_provider_enabled=true 且 runtime executable providers 显式包含 sql 时才可执行；不声明生成式答案可靠性
   执行里程碑：docs/exec-plans/milestone/v4_preflight_industrialization_milestone.md
+
+Tri-provider full-stack synthetic acceptance
+  状态：hybrid / graph / sql 三路链路闭合验收通过
+  产物：benchmarks/system_acceptance/tri_provider_full_stack/tri_provider_20260511T075338Z_unknown/
+  边界：证明 contract wiring、provider isolation、evidence coverage 和 citation trace；不等于 FinanceBench answer benchmark、GraphRAG retrieval eval 或通用 Text-to-SQL benchmark
 ```
 
 默认 runtime 现在注册 hybrid + graph 两个可执行 provider；是否调用 graph 由 QueryPlan 的 retrieval_units 决定，不会对所有 query 强制运行 graph。

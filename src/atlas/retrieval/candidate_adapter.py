@@ -146,7 +146,11 @@ def _sanitize_provider_provenance(
             raw_candidate_provider,
             fallback=provider,
         )
-        if reported_provider is None and _provider_key(raw_provider) in _unsafe_provider_labels():
+        if (
+            reported_provider is None
+            and _provider_key(raw_provider) in _unsafe_provider_labels()
+            and _provider_key(raw_provider) != _provider_key(provider)
+        ):
             reported_provider = str(raw_provider)
         item["provider"] = provider
         item["provider_local_provider"] = provider
@@ -179,7 +183,11 @@ def _sanitize_source_anchor(
     else:
         anchor_metadata = {}
     raw_anchor_provider = anchor_metadata.get("provider")
-    if reported_provider is None and _provider_key(raw_anchor_provider) in _unsafe_provider_labels():
+    if (
+        reported_provider is None
+        and _provider_key(raw_anchor_provider) in _unsafe_provider_labels()
+        and _provider_key(raw_anchor_provider) != _provider_key(provider)
+    ):
         reported_provider = str(raw_anchor_provider)
     anchor_metadata["provider"] = provider
     if reported_provider is not None:
@@ -192,7 +200,7 @@ def _safe_candidate_provider_label(value: Any, *, fallback: str) -> tuple[str, s
     text = str(value).strip() if value is not None else ""
     if not text:
         return fallback, None
-    if _provider_key(text) in _unsafe_provider_labels():
+    if _provider_key(text) in _unsafe_provider_labels() and _provider_key(text) != _provider_key(fallback):
         return fallback, text
     return text, None
 

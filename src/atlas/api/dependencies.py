@@ -19,6 +19,7 @@ from atlas.core.config import (
     executable_query_providers,
     get_settings,
     known_query_providers,
+    non_executable_query_providers,
 )
 from atlas.db.session import SessionLocal
 from atlas.embeddings.base import Embedder
@@ -129,6 +130,7 @@ def get_provider_router() -> ProviderRouter:
     return ProviderRouter(
         providers,
         known_providers=known_query_providers(settings),
+        non_executable_providers=non_executable_query_providers(settings),
         session_factory=SessionLocal,
         reranker=get_reranker(),
         reranker_enabled=settings.reranker_enabled,

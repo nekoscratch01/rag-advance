@@ -12,6 +12,7 @@ from atlas.embeddings.base import Embedder
 from atlas.embeddings.bm25_sparse import BM25SparseEncoder
 from atlas.retrieval.providers.base import RetrievalProvider
 from atlas.retrieval.providers.graph import GraphProvider, GraphStore
+from atlas.retrieval.providers.sql import SQLProvider
 from atlas.retrieval.providers.text_hybrid import TextHybridProvider
 from atlas.retrieval.providers.text_hybrid.adapters.bm25 import BM25Retriever
 from atlas.retrieval.providers.text_hybrid.adapters.dense import DenseRetriever
@@ -134,10 +135,15 @@ def _build_graph_provider(context: ProviderBuildContext) -> GraphProvider:
     )
 
 
+def _build_sql_provider(context: ProviderBuildContext) -> SQLProvider:
+    return SQLProvider(settings=context.settings)
+
+
 def _register_builtin_providers() -> None:
     for name, factory in {
         "hybrid": _build_text_hybrid_provider,
         "graph": _build_graph_provider,
+        "sql": _build_sql_provider,
     }.items():
         if name not in provider_registry.names:
             provider_registry.register(name, factory)

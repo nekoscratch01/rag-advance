@@ -6,7 +6,12 @@ from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
 
-from atlas.core.config import Settings, executable_query_providers, known_query_providers
+from atlas.core.config import (
+    Settings,
+    executable_query_providers,
+    known_query_providers,
+    non_executable_query_providers,
+)
 from atlas.core.errors import AtlasError, ErrorCode
 from atlas.core.ids import new_id
 from atlas.db import repositories
@@ -161,6 +166,7 @@ class QueryRuntime:
         self.provider_router = provider_router or ProviderRouter(
             providers,
             known_providers=_runtime_known_providers(settings, include_hybrid=injected_retriever),
+            non_executable_providers=non_executable_query_providers(settings),
             session_factory=router_session_factory,
             reranker=router_reranker,
             reranker_enabled=settings.reranker_enabled,

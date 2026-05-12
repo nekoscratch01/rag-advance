@@ -1,0 +1,1080 @@
+{
+  "artifact_dir": "/Users/neko_wen/my/\u4ee3\u7801/project/rag-advance/benchmarks/system_acceptance/tri_provider_full_stack/tri_provider_20260511T075338Z_unknown",
+  "code_config_snapshot": {
+    "artifact_snapshot": {
+      "artifact_hash": "76bc42971b2f722be2e8093f608a682a646da6f6eee26b602c02c5a614fc5798",
+      "artifact_hash_present": true,
+      "artifact_id": "artifact_tri_provider_acceptance_revenue_fixture_v1",
+      "fixture_id": "tri_provider_acceptance_revenue_fixture_v1",
+      "mode": "synthetic_structured_table_fixture",
+      "postgres_live_ingestion_proof": false,
+      "qdrant_live_ingestion_proof": false,
+      "row_count": 4,
+      "schema_hash": "547ee1a5b99f74fda3d9762f41bed12487a05fea611dfae883ae907b785d8563",
+      "schema_hash_present": true,
+      "source_hash": "3af44ad34da66531bbc6a5eb29ad678795941c744d38b4d18c7c1c052540b959",
+      "source_hash_present": true,
+      "source_locator_has_hashes": true,
+      "storage_ref": {
+        "artifact_id": "artifact_tri_provider_acceptance_revenue_fixture_v1",
+        "backend": "in_memory_acceptance_fixture",
+        "fixture_id": "tri_provider_acceptance_revenue_fixture_v1",
+        "manifest_id": "tri_provider_acceptance_manifest_v1",
+        "mode": "synthetic_structured_table_fixture",
+        "table_id": "tbl_acme_fy2024_vision_sensor_revenue"
+      },
+      "structured_artifact_writer_live": false,
+      "table_id": "tbl_acme_fy2024_vision_sensor_revenue"
+    },
+    "cache": {
+      "enabled": false,
+      "policy": "disabled"
+    },
+    "duckdb": {
+      "path": "/Users/neko_wen/my/\u4ee3\u7801/project/rag-advance/benchmarks/system_acceptance/tri_provider_full_stack/tri_provider_20260511T075338Z_unknown/duckdb/acme_robotics_fy2024_vision_sensor_revenue_table_a6203f2d59eaf491.duckdb",
+      "path_present": true,
+      "schema_hash": "76bc42971b2f722be2e8093f608a682a646da6f6eee26b602c02c5a614fc5798",
+      "status": "success",
+      "timeout_isolation": "thread_only"
+    },
+    "executable_provider_matrix": {
+      "graph": [
+        "graph"
+      ],
+      "graph+sql": [
+        "graph",
+        "sql"
+      ],
+      "hybrid": [
+        "hybrid"
+      ],
+      "hybrid+graph": [
+        "hybrid",
+        "graph"
+      ],
+      "hybrid+graph+sql": [
+        "hybrid",
+        "graph",
+        "sql"
+      ],
+      "hybrid+sql": [
+        "hybrid",
+        "sql"
+      ],
+      "sql": [
+        "sql"
+      ]
+    },
+    "git_sha": "3a9707c97931cd00820873015af7ef52c2fec0d4",
+    "graph_version": "graph_fixture_v2026_05_tri_provider",
+    "known_providers": [
+      "hybrid",
+      "graph",
+      "sql"
+    ],
+    "llm_model": "gpt-5-nano",
+    "llm_reasoning_effort": "low",
+    "manifest_id": "tri_provider_acceptance_manifest_v1",
+    "manifest_snapshot": {
+      "artifact_hash_present": true,
+      "artifact_status": "success",
+      "manifest_id": "tri_provider_acceptance_manifest_v1",
+      "mode": "synthetic_structured_table_fixture",
+      "orphaned": false,
+      "postgres_live_ingestion_proof": false,
+      "qdrant_live_ingestion_proof": false,
+      "row_count": 4,
+      "schema_hash_present": true,
+      "schema_status": "success",
+      "source_hash_present": true,
+      "source_status": "success",
+      "status": "success",
+      "structured_artifact_writer_live": false
+    },
+    "qdrant_namespace": "synthetic-no-qdrant",
+    "registry_snapshot": {
+      "providers": [
+        "graph",
+        "hybrid",
+        "sql"
+      ]
+    },
+    "sql_provider": {
+      "compiler_mode": "llm",
+      "double_opt_in": true,
+      "enabled_in_full": true
+    },
+    "structured_fixture": {
+      "artifact_snapshot": {
+        "artifact_hash": "76bc42971b2f722be2e8093f608a682a646da6f6eee26b602c02c5a614fc5798",
+        "artifact_hash_present": true,
+        "artifact_id": "artifact_tri_provider_acceptance_revenue_fixture_v1",
+        "fixture_id": "tri_provider_acceptance_revenue_fixture_v1",
+        "mode": "synthetic_structured_table_fixture",
+        "postgres_live_ingestion_proof": false,
+        "qdrant_live_ingestion_proof": false,
+        "row_count": 4,
+        "schema_hash": "547ee1a5b99f74fda3d9762f41bed12487a05fea611dfae883ae907b785d8563",
+        "schema_hash_present": true,
+        "source_hash": "3af44ad34da66531bbc6a5eb29ad678795941c744d38b4d18c7c1c052540b959",
+        "source_hash_present": true,
+        "source_locator_has_hashes": true,
+        "storage_ref": {
+          "artifact_id": "artifact_tri_provider_acceptance_revenue_fixture_v1",
+          "backend": "in_memory_acceptance_fixture",
+          "fixture_id": "tri_provider_acceptance_revenue_fixture_v1",
+          "manifest_id": "tri_provider_acceptance_manifest_v1",
+          "mode": "synthetic_structured_table_fixture",
+          "table_id": "tbl_acme_fy2024_vision_sensor_revenue"
+        },
+        "structured_artifact_writer_live": false,
+        "table_id": "tbl_acme_fy2024_vision_sensor_revenue"
+      },
+      "claim": "contract_wiring_fixture_not_live_ingestion_proof",
+      "manifest_snapshot": {
+        "artifact_hash_present": true,
+        "artifact_status": "success",
+        "manifest_id": "tri_provider_acceptance_manifest_v1",
+        "mode": "synthetic_structured_table_fixture",
+        "orphaned": false,
+        "postgres_live_ingestion_proof": false,
+        "qdrant_live_ingestion_proof": false,
+        "row_count": 4,
+        "schema_hash_present": true,
+        "schema_status": "success",
+        "source_hash_present": true,
+        "source_status": "success",
+        "status": "success",
+        "structured_artifact_writer_live": false
+      },
+      "mode": "synthetic_structured_table_fixture"
+    }
+  },
+  "combos": [
+    {
+      "answer": "\u8bc1\u636e\u4e0d\u8db3\u3002\u63d0\u4f9b\u7684\u8bc1\u636e\u4ec5\u63cf\u8ff0\u4e86\u4f9b\u5e94\u5546\u4f9d\u8d56\u98ce\u9669\uff1a\u5149\u5b66\u955c\u5934\u6a21\u5757\u7684\u552f\u4e00\u5408\u683c\u4f9b\u5e94\u5546\u4e3a PhotonWorks\uff0c\u5728\u5b8c\u6210\u4e8c\u6b21\u6765\u6e90\u8d44\u683c\u548c\u4ea7\u51fa\u6062\u590d\u524d\uff0c\u4e0d\u80fd\u63d0\u9ad8\u4ea7\u91cf[ c1 ]\u3002\u6587\u4e2d\u672a\u63d0\u4f9b FY2024 Vision Sensor \u7684\u603b\u6536\u5165\u6570\u636e\uff0c\u56e0\u6b64\u65e0\u6cd5\u7ed9\u51fa\u603b\u6536\u5165\u4ee5\u53ca\u76f8\u5173\u4e09\u6e90\u5206\u6790\u6240\u9700\u7684\u5b8c\u6574\u7b54\u6848\u3002",
+      "answer_calls": [
+        {
+          "has_json_schema": false,
+          "input_chars": 1331,
+          "latency_ms": 4845,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "answer",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 583,
+            "output_tokens": 366,
+            "total_tokens": 949
+          }
+        }
+      ],
+      "assertions": [
+        "fixed_config",
+        "plan_contract",
+        "retrieval_task_contract",
+        "provider_status_contract",
+        "cache_disabled_and_llm_calls",
+        "fixture_leakage",
+        "expected_failure_reasons"
+      ],
+      "citations": [],
+      "confidence": "unsupported",
+      "details_present": true,
+      "error": null,
+      "executable_providers": [
+        "hybrid"
+      ],
+      "expected_failure_reasons": [
+        "missing_sql_result",
+        "missing_graph_relationship_context"
+      ],
+      "name": "hybrid",
+      "observed_failure_reasons": [
+        "missing_sql_result",
+        "missing_graph_relationship_context"
+      ],
+      "passed": true,
+      "planner_calls": [
+        {
+          "has_json_schema": true,
+          "input_chars": 1849,
+          "latency_ms": 8756,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "planner",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 1400,
+            "output_tokens": 1420,
+            "total_tokens": 2820
+          }
+        }
+      ],
+      "provider_result_providers": [
+        "hybrid",
+        "graph",
+        "sql"
+      ],
+      "provider_results_present": true,
+      "reranker_calls": [
+        {
+          "input_chunk_ids": [
+            "chunk_acme_supplier_dependency"
+          ],
+          "input_count": 1,
+          "input_has_sql_result": false,
+          "input_providers": [
+            "hybrid"
+          ],
+          "input_source_types": [
+            "text_chunk"
+          ],
+          "output_count": 1,
+          "output_k": 5,
+          "query_plan_id": "qp_2fff9a7b1f614df7a2ab2b1e8d7d6b98",
+          "status": "executed"
+        }
+      ],
+      "sql_compiler_calls": []
+    },
+    {
+      "answer": "Insufficient evidence to determine FY2024 Vision Sensor total revenue from the SQL revenue table. The provided evidence documents a supplier dependency risk: PhotonWorks is the sole qualified supplier for the optical lens module, restricting ramp-up until second-source qualification and yield recovery [c1].",
+      "answer_calls": [
+        {
+          "has_json_schema": false,
+          "input_chars": 1331,
+          "latency_ms": 4629,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "answer",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 583,
+            "output_tokens": 490,
+            "total_tokens": 1073
+          }
+        }
+      ],
+      "assertions": [
+        "fixed_config",
+        "plan_contract",
+        "retrieval_task_contract",
+        "provider_status_contract",
+        "cache_disabled_and_llm_calls",
+        "fixture_leakage",
+        "expected_failure_reasons"
+      ],
+      "citations": [
+        {
+          "child_ids": [
+            "chunk_acme_supplier_dependency"
+          ],
+          "chunk_id": "chunk_acme_supplier_dependency",
+          "citation_id": "c1",
+          "document_id": "doc_acme_robotics_fy2024_launch",
+          "page_end": 7,
+          "page_start": 7,
+          "parent_id": "parent_acme_supplier_dependency",
+          "retrieval_score": 99.0,
+          "retrieved_by": [
+            "graph"
+          ],
+          "section_title": "Launch Constraints",
+          "source_title": "Acme Robotics FY2024 Vision Sensor Launch Notes",
+          "source_uri": "synthetic://acme/fy2024-launch-notes",
+          "supporting_text": "Acme Robotics' FY2024 Vision Sensor launch was constrained by a supplier dependency risk: the optical lens module depended on PhotonWorks as the sole qualified supplier. The launch constraint was that ramp volume could not increase until PhotonWorks completed second-source qualification and yield recovery. Relationship..."
+        }
+      ],
+      "confidence": "insufficient",
+      "details_present": true,
+      "error": null,
+      "executable_providers": [
+        "graph"
+      ],
+      "expected_failure_reasons": [
+        "missing_sql_result",
+        "missing_hybrid_text_coverage"
+      ],
+      "name": "graph",
+      "observed_failure_reasons": [
+        "missing_sql_result",
+        "missing_hybrid_text_coverage"
+      ],
+      "passed": true,
+      "planner_calls": [
+        {
+          "has_json_schema": true,
+          "input_chars": 1849,
+          "latency_ms": 11615,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "planner",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 1399,
+            "output_tokens": 1592,
+            "total_tokens": 2991
+          }
+        }
+      ],
+      "provider_result_providers": [
+        "hybrid",
+        "graph",
+        "sql"
+      ],
+      "provider_results_present": true,
+      "reranker_calls": [
+        {
+          "input_chunk_ids": [
+            "chunk_acme_supplier_dependency"
+          ],
+          "input_count": 1,
+          "input_has_sql_result": false,
+          "input_providers": [
+            "graph"
+          ],
+          "input_source_types": [
+            "text_chunk"
+          ],
+          "output_count": 1,
+          "output_k": 5,
+          "query_plan_id": "qp_0f1e3a6b06334dcfa0d1fed0a3b37d70",
+          "status": "executed"
+        }
+      ],
+      "sql_compiler_calls": []
+    },
+    {
+      "answer": "Total revenue reported by the table (sum across categories) is 123456. However, there is no evidence about any supplier dependency risk explaining the launch constraint in the provided sources. The available evidence only includes the revenue table data [c1].",
+      "answer_calls": [
+        {
+          "has_json_schema": false,
+          "input_chars": 1212,
+          "latency_ms": 4154,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "answer",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 609,
+            "output_tokens": 393,
+            "total_tokens": 1002
+          }
+        }
+      ],
+      "assertions": [
+        "fixed_config",
+        "plan_contract",
+        "retrieval_task_contract",
+        "provider_status_contract",
+        "cache_disabled_and_llm_calls",
+        "fixture_leakage",
+        "expected_failure_reasons"
+      ],
+      "citations": [
+        {
+          "child_ids": [
+            "sql_chunk_fba38f4305a95a71b6180804"
+          ],
+          "chunk_id": "sql_chunk_fba38f4305a95a71b6180804",
+          "citation_id": "c1",
+          "document_id": "doc_acme_robotics_fy2024_launch",
+          "page_end": null,
+          "page_start": null,
+          "parent_id": null,
+          "retrieval_score": 0.01639344262295082,
+          "retrieved_by": [
+            "sql"
+          ],
+          "section_title": null,
+          "source_title": "SQL result for table Acme Robotics FY2024 Vision Sensor Revenue Table",
+          "source_uri": "synthetic://acme/fy2024-revenue-table",
+          "supporting_text": "SQL result for table Acme Robotics FY2024 Vision Sensor Revenue Table (tbl_acme_fy2024_vision_sensor_revenue): row 1: category = Hardware total_revenue = 50000.0 row 2: category = Software total_revenue = 40000.0 row 3: category = Services total_revenue = 33456.0"
+        }
+      ],
+      "confidence": "insufficient",
+      "details_present": true,
+      "error": null,
+      "executable_providers": [
+        "sql"
+      ],
+      "expected_failure_reasons": [
+        "missing_supplier_risk_text_evidence"
+      ],
+      "name": "sql",
+      "observed_failure_reasons": [
+        "missing_supplier_risk_text_evidence"
+      ],
+      "passed": true,
+      "planner_calls": [
+        {
+          "has_json_schema": true,
+          "input_chars": 1849,
+          "latency_ms": 12566,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "planner",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 1399,
+            "output_tokens": 1729,
+            "total_tokens": 3128
+          }
+        }
+      ],
+      "provider_result_providers": [
+        "hybrid",
+        "graph",
+        "sql"
+      ],
+      "provider_results_present": true,
+      "reranker_calls": [],
+      "sql_compiler_calls": [
+        {
+          "input_chars": 766,
+          "latency_ms": 4754,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "safe_columns": [
+            "fiscal_year",
+            "product",
+            "category",
+            "revenue"
+          ],
+          "schema_table": "acme_robotics_fy2024_vision_sensor_revenue_table",
+          "stage": "sql_compiler",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 241,
+            "output_tokens": 491,
+            "total_tokens": 732
+          }
+        }
+      ]
+    },
+    {
+      "answer": "Total revenue for FY2024 Vision Sensor is not provided in the available evidence, so revenue cannot be determined. The evidence does show a supplier dependency risk: the optical lens module depends on PhotonWorks as the sole qualified supplier, with ramp volume constrained until PhotonWorks completes second-source qualification and yield recovery [c1].",
+      "answer_calls": [
+        {
+          "has_json_schema": false,
+          "input_chars": 1331,
+          "latency_ms": 2442,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "answer",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 583,
+            "output_tokens": 316,
+            "total_tokens": 899
+          }
+        }
+      ],
+      "assertions": [
+        "fixed_config",
+        "plan_contract",
+        "retrieval_task_contract",
+        "provider_status_contract",
+        "cache_disabled_and_llm_calls",
+        "fixture_leakage",
+        "expected_failure_reasons"
+      ],
+      "citations": [
+        {
+          "child_ids": [
+            "chunk_acme_supplier_dependency"
+          ],
+          "chunk_id": "chunk_acme_supplier_dependency",
+          "citation_id": "c1",
+          "document_id": "doc_acme_robotics_fy2024_launch",
+          "page_end": 7,
+          "page_start": 7,
+          "parent_id": "parent_acme_supplier_dependency",
+          "retrieval_score": 99.0,
+          "retrieved_by": [
+            "hybrid",
+            "graph",
+            "cross_provider"
+          ],
+          "section_title": "Launch Constraints",
+          "source_title": "Acme Robotics FY2024 Vision Sensor Launch Notes",
+          "source_uri": "synthetic://acme/fy2024-launch-notes",
+          "supporting_text": "Acme Robotics' FY2024 Vision Sensor launch was constrained by a supplier dependency risk: the optical lens module depended on PhotonWorks as the sole qualified supplier. The launch constraint was that ramp volume could not increase until PhotonWorks completed second-source qualification and yield recovery. Relationship..."
+        }
+      ],
+      "confidence": "insufficient",
+      "details_present": true,
+      "error": null,
+      "executable_providers": [
+        "hybrid",
+        "graph"
+      ],
+      "expected_failure_reasons": [
+        "missing_sql_result"
+      ],
+      "name": "hybrid+graph",
+      "observed_failure_reasons": [
+        "missing_sql_result"
+      ],
+      "passed": true,
+      "planner_calls": [
+        {
+          "has_json_schema": true,
+          "input_chars": 1849,
+          "latency_ms": 8802,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "planner",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 1402,
+            "output_tokens": 1398,
+            "total_tokens": 2800
+          }
+        },
+        {
+          "has_json_schema": true,
+          "input_chars": 2201,
+          "latency_ms": 11168,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "planner",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 1473,
+            "output_tokens": 1525,
+            "total_tokens": 2998
+          }
+        },
+        {
+          "has_json_schema": true,
+          "input_chars": 2201,
+          "latency_ms": 14779,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "planner",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 1473,
+            "output_tokens": 1900,
+            "total_tokens": 3373
+          }
+        }
+      ],
+      "provider_result_providers": [
+        "hybrid",
+        "graph",
+        "sql"
+      ],
+      "provider_results_present": true,
+      "reranker_calls": [
+        {
+          "input_chunk_ids": [
+            "chunk_acme_supplier_dependency"
+          ],
+          "input_count": 1,
+          "input_has_sql_result": false,
+          "input_providers": [
+            "hybrid"
+          ],
+          "input_source_types": [
+            "text_chunk"
+          ],
+          "output_count": 1,
+          "output_k": 5,
+          "query_plan_id": "qp_a80706beed3c4b1d9e652ac2bd4f3ac2",
+          "status": "executed"
+        }
+      ],
+      "sql_compiler_calls": []
+    },
+    {
+      "answer": "Total revenue reported: 123456.0 [c1]. Supplier dependency risk: PhotonWorks is the sole qualified supplier for the optical lens module; ramp volume could not increase until PhotonWorks completed second-source qualification and yield recovery [c2].",
+      "answer_calls": [
+        {
+          "has_json_schema": false,
+          "input_chars": 1917,
+          "latency_ms": 2246,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "answer",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 762,
+            "output_tokens": 219,
+            "total_tokens": 981
+          }
+        }
+      ],
+      "assertions": [
+        "fixed_config",
+        "plan_contract",
+        "retrieval_task_contract",
+        "provider_status_contract",
+        "cache_disabled_and_llm_calls",
+        "fixture_leakage",
+        "expected_failure_reasons"
+      ],
+      "citations": [
+        {
+          "child_ids": [
+            "sql_chunk_b0ca1c53d4ec6c71f7af6ab0"
+          ],
+          "chunk_id": "sql_chunk_b0ca1c53d4ec6c71f7af6ab0",
+          "citation_id": "c1",
+          "document_id": "doc_acme_robotics_fy2024_launch",
+          "page_end": null,
+          "page_start": null,
+          "parent_id": null,
+          "retrieval_score": 0.01639344262295082,
+          "retrieved_by": [
+            "sql"
+          ],
+          "section_title": null,
+          "source_title": "SQL result for table Acme Robotics FY2024 Vision Sensor Revenue Table",
+          "source_uri": "synthetic://acme/fy2024-revenue-table",
+          "supporting_text": "SQL result for table Acme Robotics FY2024 Vision Sensor Revenue Table (tbl_acme_fy2024_vision_sensor_revenue): total_revenue = 123456.0"
+        },
+        {
+          "child_ids": [
+            "chunk_acme_supplier_dependency"
+          ],
+          "chunk_id": "chunk_acme_supplier_dependency",
+          "citation_id": "c2",
+          "document_id": "doc_acme_robotics_fy2024_launch",
+          "page_end": 7,
+          "page_start": 7,
+          "parent_id": "parent_acme_supplier_dependency",
+          "retrieval_score": 99.0,
+          "retrieved_by": [
+            "hybrid"
+          ],
+          "section_title": "Launch Constraints",
+          "source_title": "Acme Robotics FY2024 Vision Sensor Launch Notes",
+          "source_uri": "synthetic://acme/fy2024-launch-notes",
+          "supporting_text": "Acme Robotics' FY2024 Vision Sensor launch was constrained by a supplier dependency risk: the optical lens module depended on PhotonWorks as the sole qualified supplier. The launch constraint was that ramp volume could not increase until PhotonWorks completed second-source qualification and yield recovery. Relationship..."
+        }
+      ],
+      "confidence": "supported",
+      "details_present": true,
+      "error": null,
+      "executable_providers": [
+        "hybrid",
+        "sql"
+      ],
+      "expected_failure_reasons": [
+        "missing_graph_relationship_provenance"
+      ],
+      "name": "hybrid+sql",
+      "observed_failure_reasons": [
+        "missing_graph_relationship_provenance"
+      ],
+      "passed": true,
+      "planner_calls": [
+        {
+          "has_json_schema": true,
+          "input_chars": 1849,
+          "latency_ms": 7317,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "planner",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 1402,
+            "output_tokens": 1108,
+            "total_tokens": 2510
+          }
+        }
+      ],
+      "provider_result_providers": [
+        "hybrid",
+        "graph",
+        "sql"
+      ],
+      "provider_results_present": true,
+      "reranker_calls": [
+        {
+          "input_chunk_ids": [
+            "chunk_acme_supplier_dependency"
+          ],
+          "input_count": 1,
+          "input_has_sql_result": false,
+          "input_providers": [
+            "hybrid"
+          ],
+          "input_source_types": [
+            "text_chunk"
+          ],
+          "output_count": 1,
+          "output_k": 5,
+          "query_plan_id": "qp_25822b05a80c4f9ab766d488b1bc345a",
+          "status": "executed"
+        }
+      ],
+      "sql_compiler_calls": [
+        {
+          "input_chars": 764,
+          "latency_ms": 4305,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "safe_columns": [
+            "fiscal_year",
+            "product",
+            "category",
+            "revenue"
+          ],
+          "schema_table": "acme_robotics_fy2024_vision_sensor_revenue_table",
+          "stage": "sql_compiler",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 241,
+            "output_tokens": 326,
+            "total_tokens": 567
+          }
+        }
+      ]
+    },
+    {
+      "answer": "Total revenue: 123456.0; supplier dependency risk: PhotonWorks is the sole qualified supplier for the optical lens module, requiring second-source qualification and yield recovery before ramping up volume [c1][c2].",
+      "answer_calls": [
+        {
+          "has_json_schema": false,
+          "input_chars": 1917,
+          "latency_ms": 2198,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "answer",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 762,
+            "output_tokens": 219,
+            "total_tokens": 981
+          }
+        }
+      ],
+      "assertions": [
+        "fixed_config",
+        "plan_contract",
+        "retrieval_task_contract",
+        "provider_status_contract",
+        "cache_disabled_and_llm_calls",
+        "fixture_leakage",
+        "expected_failure_reasons"
+      ],
+      "citations": [
+        {
+          "child_ids": [
+            "sql_chunk_b0ca1c53d4ec6c71f7af6ab0"
+          ],
+          "chunk_id": "sql_chunk_b0ca1c53d4ec6c71f7af6ab0",
+          "citation_id": "c1",
+          "document_id": "doc_acme_robotics_fy2024_launch",
+          "page_end": null,
+          "page_start": null,
+          "parent_id": null,
+          "retrieval_score": 0.01639344262295082,
+          "retrieved_by": [
+            "sql"
+          ],
+          "section_title": null,
+          "source_title": "SQL result for table Acme Robotics FY2024 Vision Sensor Revenue Table",
+          "source_uri": "synthetic://acme/fy2024-revenue-table",
+          "supporting_text": "SQL result for table Acme Robotics FY2024 Vision Sensor Revenue Table (tbl_acme_fy2024_vision_sensor_revenue): total_revenue = 123456.0"
+        },
+        {
+          "child_ids": [
+            "chunk_acme_supplier_dependency"
+          ],
+          "chunk_id": "chunk_acme_supplier_dependency",
+          "citation_id": "c2",
+          "document_id": "doc_acme_robotics_fy2024_launch",
+          "page_end": 7,
+          "page_start": 7,
+          "parent_id": "parent_acme_supplier_dependency",
+          "retrieval_score": 99.0,
+          "retrieved_by": [
+            "graph"
+          ],
+          "section_title": "Launch Constraints",
+          "source_title": "Acme Robotics FY2024 Vision Sensor Launch Notes",
+          "source_uri": "synthetic://acme/fy2024-launch-notes",
+          "supporting_text": "Acme Robotics' FY2024 Vision Sensor launch was constrained by a supplier dependency risk: the optical lens module depended on PhotonWorks as the sole qualified supplier. The launch constraint was that ramp volume could not increase until PhotonWorks completed second-source qualification and yield recovery. Relationship..."
+        }
+      ],
+      "confidence": "supported",
+      "details_present": true,
+      "error": null,
+      "executable_providers": [
+        "graph",
+        "sql"
+      ],
+      "expected_failure_reasons": [
+        "missing_hybrid_text_coverage"
+      ],
+      "name": "graph+sql",
+      "observed_failure_reasons": [
+        "missing_hybrid_text_coverage"
+      ],
+      "passed": true,
+      "planner_calls": [
+        {
+          "has_json_schema": true,
+          "input_chars": 1849,
+          "latency_ms": 8609,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "planner",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 1401,
+            "output_tokens": 1393,
+            "total_tokens": 2794
+          }
+        }
+      ],
+      "provider_result_providers": [
+        "hybrid",
+        "graph",
+        "sql"
+      ],
+      "provider_results_present": true,
+      "reranker_calls": [
+        {
+          "input_chunk_ids": [
+            "chunk_acme_supplier_dependency"
+          ],
+          "input_count": 1,
+          "input_has_sql_result": false,
+          "input_providers": [
+            "graph"
+          ],
+          "input_source_types": [
+            "text_chunk"
+          ],
+          "output_count": 1,
+          "output_k": 5,
+          "query_plan_id": "qp_bf9995c80a7140a29c81695a5ef3ff7b",
+          "status": "executed"
+        }
+      ],
+      "sql_compiler_calls": [
+        {
+          "input_chars": 795,
+          "latency_ms": 2414,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "safe_columns": [
+            "fiscal_year",
+            "product",
+            "category",
+            "revenue"
+          ],
+          "schema_table": "acme_robotics_fy2024_vision_sensor_revenue_table",
+          "stage": "sql_compiler",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 248,
+            "output_tokens": 264,
+            "total_tokens": 512
+          }
+        }
+      ]
+    },
+    {
+      "answer": "Total revenue reported: 123456.0 [c1]. Supplier dependency risk: PhotonWorks is the sole qualified supplier for the optical lens module, constraining ramp volume until PhotonWorks completes second-source qualification and yield recovery [c2].",
+      "answer_calls": [
+        {
+          "has_json_schema": false,
+          "input_chars": 1917,
+          "latency_ms": 2061,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "answer",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 762,
+            "output_tokens": 218,
+            "total_tokens": 980
+          }
+        }
+      ],
+      "assertions": [
+        "fixed_config",
+        "plan_contract",
+        "retrieval_task_contract",
+        "provider_status_contract",
+        "cache_disabled_and_llm_calls",
+        "fixture_leakage",
+        "expected_failure_reasons",
+        "sql_contract",
+        "graph_contract",
+        "dedupe_provenance",
+        "reranker_contract",
+        "evidence_prompt_contract",
+        "final_answer_contract"
+      ],
+      "citations": [
+        {
+          "child_ids": [
+            "sql_chunk_b0ca1c53d4ec6c71f7af6ab0"
+          ],
+          "chunk_id": "sql_chunk_b0ca1c53d4ec6c71f7af6ab0",
+          "citation_id": "c1",
+          "document_id": "doc_acme_robotics_fy2024_launch",
+          "page_end": null,
+          "page_start": null,
+          "parent_id": null,
+          "retrieval_score": 0.01639344262295082,
+          "retrieved_by": [
+            "sql"
+          ],
+          "section_title": null,
+          "source_title": "SQL result for table Acme Robotics FY2024 Vision Sensor Revenue Table",
+          "source_uri": "synthetic://acme/fy2024-revenue-table",
+          "supporting_text": "SQL result for table Acme Robotics FY2024 Vision Sensor Revenue Table (tbl_acme_fy2024_vision_sensor_revenue): total_revenue = 123456.0"
+        },
+        {
+          "child_ids": [
+            "chunk_acme_supplier_dependency"
+          ],
+          "chunk_id": "chunk_acme_supplier_dependency",
+          "citation_id": "c2",
+          "document_id": "doc_acme_robotics_fy2024_launch",
+          "page_end": 7,
+          "page_start": 7,
+          "parent_id": "parent_acme_supplier_dependency",
+          "retrieval_score": 99.0,
+          "retrieved_by": [
+            "hybrid",
+            "graph",
+            "cross_provider"
+          ],
+          "section_title": "Launch Constraints",
+          "source_title": "Acme Robotics FY2024 Vision Sensor Launch Notes",
+          "source_uri": "synthetic://acme/fy2024-launch-notes",
+          "supporting_text": "Acme Robotics' FY2024 Vision Sensor launch was constrained by a supplier dependency risk: the optical lens module depended on PhotonWorks as the sole qualified supplier. The launch constraint was that ramp volume could not increase until PhotonWorks completed second-source qualification and yield recovery. Relationship..."
+        }
+      ],
+      "confidence": "supported",
+      "details_present": true,
+      "error": null,
+      "executable_providers": [
+        "hybrid",
+        "graph",
+        "sql"
+      ],
+      "expected_failure_reasons": [],
+      "name": "hybrid+graph+sql",
+      "observed_failure_reasons": [],
+      "passed": true,
+      "planner_calls": [
+        {
+          "has_json_schema": true,
+          "input_chars": 1849,
+          "latency_ms": 10673,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "planner",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 1404,
+            "output_tokens": 1403,
+            "total_tokens": 2807
+          }
+        },
+        {
+          "has_json_schema": true,
+          "input_chars": 2022,
+          "latency_ms": 10769,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "stage": "planner",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 1438,
+            "output_tokens": 1373,
+            "total_tokens": 2811
+          }
+        }
+      ],
+      "provider_result_providers": [
+        "hybrid",
+        "graph",
+        "sql"
+      ],
+      "provider_results_present": true,
+      "reranker_calls": [
+        {
+          "input_chunk_ids": [
+            "chunk_acme_supplier_dependency"
+          ],
+          "input_count": 1,
+          "input_has_sql_result": false,
+          "input_providers": [
+            "hybrid"
+          ],
+          "input_source_types": [
+            "text_chunk"
+          ],
+          "output_count": 1,
+          "output_k": 5,
+          "query_plan_id": "qp_f4f61c59f5d74a55ab17ef281ef3f914",
+          "status": "executed"
+        }
+      ],
+      "sql_compiler_calls": [
+        {
+          "input_chars": 767,
+          "latency_ms": 2713,
+          "model": "gpt-5-nano",
+          "real_openai_response_api": true,
+          "reasoning_effort": "low",
+          "safe_columns": [
+            "fiscal_year",
+            "product",
+            "category",
+            "revenue"
+          ],
+          "schema_table": "acme_robotics_fy2024_vision_sensor_revenue_table",
+          "stage": "sql_compiler",
+          "status": "completed",
+          "usage": {
+            "input_tokens": 241,
+            "output_tokens": 347,
+            "total_tokens": 588
+          }
+        }
+      ]
+    }
+  ],
+  "generated_at": "2026-05-11T07:56:01.167321+00:00",
+  "gold_total": "123456",
+  "query": "For Acme Robotics' FY2024 Vision Sensor launch, use three independent evidence sources: a hybrid text evidence branch for the exact launch constraint wording; a graph relationship context branch for the Acme Robotics -> PhotonWorks supplier dependency relationship; and a SQL revenue table branch for the FY2024 Vision Sensor total revenue. What total revenue does the table report, and what supplier dependency risk explains the launch constraint?",
+  "run_id": "tri_provider_20260511T075338Z_unknown",
+  "secret_scan": {
+    "findings": [],
+    "status": "passed"
+  },
+  "success": true
+}

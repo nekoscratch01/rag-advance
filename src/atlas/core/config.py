@@ -1,12 +1,12 @@
 from functools import lru_cache
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from atlas.core.errors import AtlasError, ErrorCode
 
 
-IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid", "graph")
+IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid", "graph", "sql")
 RESERVED_INTERNAL_PROVIDER_NAMES = (
     "dense",
     "bm25",
@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://atlas:atlas@localhost:15432/atlas"
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "atlas_chunks_bge_small_zh_v1_5"
+    v4_qdrant_collection: str = "atlas_v4_chunks_bge_small_zh_v1_5"
     qdrant_dense_vector_name: str = "dense"
     qdrant_sparse_vector_name: str = "bm25"
     vector_store_backend: str = "qdrant"
@@ -78,6 +79,16 @@ class Settings(BaseSettings):
     query_planner_max_units: int = 6
     query_planner_known_providers: str = "hybrid,sql,graph"
     query_runtime_executable_providers: str = "hybrid,graph"
+    sql_provider_enabled: bool = False
+    structured_sql_duckdb_dir: str = "artifacts/structured_sql_duckdb"
+    structured_sql_timeout_ms: int = 1000
+    structured_sql_max_rows: int = 100
+    structured_sql_max_result_bytes: int = 65536
+    structured_sql_memory_limit: str = "128MB"
+    structured_sql_compiler_mode: str = "heuristic"
+    structured_sql_min_table_score: float = 0.15
+    structured_sql_min_score_margin: float = 0.10
+    structured_sql_max_candidate_tables: int = 1
     # Deprecated: retained only so older .env files do not fail settings parsing.
     query_planner_enabled_providers: str = "hybrid"
     query_planner_retry_count: int = 2
@@ -92,11 +103,20 @@ class Settings(BaseSettings):
     evidence_builder_version: str = "parent_child_v1"
     critic_version: str = "critic_lite_v1"
     document_roots: str = "samples,corpus"
+    v4_structured_artifact_output_dir: str = "artifacts/v4_structured_artifacts"
 
     cache_enabled: bool = False
     cache_backend: str = "local"
     cache_ttl_seconds: int = 3600
     trace_include_raw_llm_io_default: bool = False
+
+    @field_validator("structured_sql_compiler_mode")
+    @classmethod
+    def _validate_structured_sql_compiler_mode(cls, value: str) -> str:
+        mode = str(value or "").strip().lower()
+        if mode not in {"heuristic", "llm"}:
+            raise ValueError("structured_sql_compiler_mode must be 'heuristic' or 'llm'")
+        return mode
 
 
 @lru_cache
@@ -129,7 +149,7 @@ def executable_query_providers(settings: Settings) -> tuple[str, ...]:
     known_providers = known_query_providers(settings)
     known = set(known_providers)
     registered = _registered_runtime_providers()
-    non_executable = set(NON_EXECUTABLE_QUERY_PROVIDERS)
+    non_executable = set(non_executable_query_providers(settings))
     reserved = set(RESERVED_INTERNAL_PROVIDER_NAMES)
     reserved_requested = tuple(provider for provider in requested if provider in reserved)
     unknown_requested = tuple(
@@ -171,6 +191,19 @@ def executable_query_providers(settings: Settings) -> tuple[str, ...]:
         for provider in requested
         if provider in registered and provider in known and provider not in non_executable
     )
+
+
+def non_executable_query_providers(settings: Settings) -> tuple[str, ...]:
+    providers = []
+    requested = set(_provider_list(settings.query_runtime_executable_providers))
+    if not settings.sql_provider_enabled or "sql" not in requested:
+        providers.append("sql")
+    return tuple(providers)
+
+
+def sql_provider_runtime_enabled(settings: Settings) -> bool:
+    requested = set(_provider_list(settings.query_runtime_executable_providers))
+    return settings.sql_provider_enabled and "sql" in requested
 
 
 def _registered_runtime_providers() -> set[str]:

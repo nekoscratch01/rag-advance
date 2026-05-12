@@ -2282,6 +2282,14 @@ def test_executable_query_providers_defaults_hybrid_graph_and_filters_sql() -> N
 
     assert executable_query_providers(settings) == ("hybrid", "graph")
 
+    opt_in_settings = Settings(
+        openai_api_key=None,
+        sql_provider_enabled=True,
+        query_runtime_executable_providers="hybrid,sql,graph",
+    )
+
+    assert executable_query_providers(opt_in_settings) == ("hybrid", "sql", "graph")
+
 
 def test_executable_query_providers_stay_within_known_provider_set() -> None:
     settings = Settings(

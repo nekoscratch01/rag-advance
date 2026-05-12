@@ -11,7 +11,7 @@
 V1 baseline：只启用 hybrid provider。
 当前默认 Atlas runtime：hybrid + graph 可执行，仍由 QueryPlan 决定是否调用 graph。
 V1 provider 实现：TextHybridProvider。
-SQLProvider：未实现。
+SQLProvider：V1 受控单表 Text-to-SQL proof 已实现；默认仍不可执行，必须同时设置 sql_provider_enabled=true 且 query_runtime_executable_providers 显式包含 sql。
 GraphProvider：V3.0 walking skeleton 已默认注册为可执行 provider；不声明质量提升。
 ```
 
@@ -32,7 +32,7 @@ POST /v1/query
               -> Qdrant dense + Qdrant BM25 sparse
               -> provider-local Python Weighted RRF
        graph  -> GraphProvider local/path walking skeleton, only when QueryPlan selects graph
-       sql    -> skipped_non_executable
+       sql    -> 默认 skipped_non_executable；显式 opt-in 后进入 SQLProvider V1 单表链路
   -> CandidateAdapter
   -> CandidateFusion
   -> optional global CrossEncoder reranker
@@ -80,7 +80,7 @@ FinanceBench JSONL 是冻结测评产物，不是 runtime 存储。
 | Provider | 代码状态 | V1 可执行 | 说明 |
 |---|---|---:|---|
 | `hybrid` | `src/atlas/retrieval/providers/text_hybrid/` | 是 | V1 默认 provider。内部有 dense、BM25、metric_alias、section、table textual lanes。 |
-| `sql` | 无 `SQLProvider` runtime | 否 | V4 候选。V1 不做 Text-to-SQL、计算、cell provenance。 |
+| `sql` | `src/atlas/retrieval/providers/sql/` | 默认否；显式双开关后是 | V4 SQLProvider V1 proof：单表 schema routing、identifier normalization、compiler、validator、DuckDB executor、deterministic SQL result evidence。不声明生成式答案可靠性或 cell-level citation 完成。 |
 | `graph` | `src/atlas/retrieval/providers/graph/` | 当前默认是；可显式关闭 | V3.0 walking skeleton：local/path、Postgres grounding、trace auditability；不声明质量提升；只在 QueryPlan 选择 graph 时运行。 |
 
 配置入口：
@@ -89,9 +89,11 @@ FinanceBench JSONL 是冻结测评产物，不是 runtime 存储。
 src/atlas/core/config.py
   Settings.query_planner_known_providers = "hybrid,sql,graph"
   Settings.query_runtime_executable_providers = "hybrid,graph"
-  IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid", "graph")
+  IMPLEMENTED_RUNTIME_PROVIDERS = ("hybrid", "graph", "sql")
+  sql_provider_enabled = false
   known_query_providers(settings)
-  executable_query_providers(settings) = requested ∩ registered_runtime_provider ∩ known - non_executable(sql)
+  executable_query_providers(settings) = requested ∩ registered_runtime_provider ∩ known - conditional_non_executable(sql)
+  sql 只有在 sql_provider_enabled=true 且 requested 显式包含 sql 时才可执行
 ```
 
 Provider registry / dependency 装配：
@@ -101,12 +103,12 @@ src/atlas/core/registry.py
   ComponentRegistry(namespace="retrieval_provider")
 
 src/atlas/retrieval/providers/registry.py
-  provider_registry built-ins = hybrid / graph
+  provider_registry built-ins = hybrid / graph / sql
   build_provider(name, ProviderBuildContext)
 
 src/atlas/api/dependencies.py
   executable_query_providers(settings)
-  build_provider("hybrid" | "graph", ProviderBuildContext)
+  build_provider("hybrid" | "graph" | opt-in "sql", ProviderBuildContext)
   get_provider_router() -> ProviderRouter(..., session_factory=SessionLocal)
 ```
 
@@ -114,7 +116,7 @@ Router 注册边界：
 
 ```text
 provider 必须显式继承 RetrievalProvider ABC。
-sql 是 known semantic provider，但不是 executable provider，注册 sql 会被拒绝。
+sql 是 known semantic provider；默认 runtime 视为 non-executable，显式双开关 opt-in 后才允许注册/执行。
 dense / bm25 / sparse / table / section / metric_alias 是 internal lanes，注册为 provider 会被拒绝。
 unknown provider 会在 router 注册期失败，而不是运行时静默降级。
 ```
@@ -137,6 +139,16 @@ provider = "hybrid" | "sql" | "graph"
 ```text
 provider = "hybrid" | "graph"
 ```
+
+SQLProvider opt-in execution：
+
+```bash
+ATLAS_SQL_PROVIDER_ENABLED=true
+ATLAS_QUERY_RUNTIME_EXECUTABLE_PROVIDERS=hybrid,sql,graph
+```
+
+当前 SQLProvider V1 只声明受控单表最小闭环，不声明完整答案可靠性。
+SQLProvider V1 的 DuckDB timeout trace 使用 `timeout_isolation=thread_only`；当前未实现 worker-process isolation，也不声明能强杀 native DuckDB query。
 
 V1 baseline 回退口径是：
 
@@ -245,7 +257,7 @@ build_fallback_plan(...)
 schema 知道 hybrid / sql / graph。
 默认 runtime 通过 ProviderRouter 注册 TextHybridProvider 和 GraphProvider。
 如果 LLM 为 SQL-like 或 graph-like query 输出 sql / graph，这是合法 semantic plan。
-sql 在 V1 不可执行，会生成 skipped_non_executable ProviderResult。
+sql 默认不可执行，会生成 skipped_non_executable ProviderResult；显式双开关 opt-in 后才进入 SQLProvider V1 单表链路。
 graph 默认可执行 local/path walking skeleton；仍不能绕过 Evidence Kernel。
 ```
 
@@ -255,7 +267,7 @@ V1 架构要求：
 prompt 必须声明 known_providers = ["hybrid", "sql", "graph"]。
 默认 runtime 声明 executable_providers = ["hybrid", "graph"]。
 V1 baseline 可显式声明 executable_providers = ["hybrid"]。
-non-executable provider 必须进入 trace，不进入 evidence。
+non-executable provider 必须进入 trace，不进入 evidence。SQLProvider opt-in 成功时输出 pinned / rerankable=false 的 sql_result evidence。
 默认不自动 hybrid_backfill。
 ```
 

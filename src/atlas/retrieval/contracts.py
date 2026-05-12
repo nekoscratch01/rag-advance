@@ -4,7 +4,21 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 
-ProviderStatus = Literal["executed", "empty", "skipped_non_executable", "failed"]
+ProviderStatus = Literal[
+    "executed",
+    "empty",
+    "skipped_non_executable",
+    "failed",
+    "success",
+    "skipped_not_table_query",
+    "cannot_answer_no_table",
+    "cannot_answer_low_confidence",
+    "unsupported_multi_table",
+    "compiler_failed",
+    "validation_failed",
+    "execution_failed",
+    "timeout",
+]
 
 
 @dataclass(frozen=True)

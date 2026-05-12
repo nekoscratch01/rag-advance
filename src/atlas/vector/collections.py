@@ -4,22 +4,33 @@ from atlas.core.config import Settings, bm25_sparse_enabled
 from atlas.core.errors import AtlasError, ErrorCode
 
 
-def ensure_chunk_collection(client: QdrantClient, settings: Settings) -> None:
-    if client.collection_exists(settings.qdrant_collection):
-        _validate_collection(client, settings)
+def ensure_chunk_collection(
+    client: QdrantClient,
+    settings: Settings,
+    *,
+    collection_name: str | None = None,
+) -> None:
+    collection_name = collection_name or settings.qdrant_collection
+    if client.collection_exists(collection_name):
+        _validate_collection(client, settings, collection_name=collection_name)
         return
 
     client.create_collection(
-        collection_name=settings.qdrant_collection,
+        collection_name=collection_name,
         vectors_config=_vectors_config(settings),
         sparse_vectors_config=_sparse_vectors_config(settings),
     )
 
 
-def _validate_collection(client: QdrantClient, settings: Settings) -> None:
-    info = client.get_collection(settings.qdrant_collection)
+def _validate_collection(
+    client: QdrantClient,
+    settings: Settings,
+    *,
+    collection_name: str,
+) -> None:
+    info = client.get_collection(collection_name)
     if bm25_sparse_enabled(settings):
-        _validate_v1_hybrid_collection(info, settings)
+        _validate_v1_hybrid_collection(info, settings, collection_name=collection_name)
         return
 
     actual_size = _legacy_collection_vector_size(info)
@@ -29,7 +40,7 @@ def _validate_collection(client: QdrantClient, settings: Settings) -> None:
             "Existing Qdrant collection vector size does not match the configured embedding model.",
             status_code=500,
             details={
-                "collection": settings.qdrant_collection,
+                "collection": collection_name,
                 "expected_dim": settings.embedding_dim,
                 "actual_dim": actual_size,
                 "embedding_model": settings.embedding_model,
@@ -37,7 +48,12 @@ def _validate_collection(client: QdrantClient, settings: Settings) -> None:
         )
 
 
-def _validate_v1_hybrid_collection(info, settings: Settings) -> None:
+def _validate_v1_hybrid_collection(
+    info,
+    settings: Settings,
+    *,
+    collection_name: str,
+) -> None:
     actual_size = _named_collection_vector_size(info, settings.qdrant_dense_vector_name)
     if actual_size != settings.embedding_dim:
         raise AtlasError(
@@ -45,7 +61,7 @@ def _validate_v1_hybrid_collection(info, settings: Settings) -> None:
             "Existing Qdrant collection dense vector size does not match the configured embedding model.",
             status_code=500,
             details={
-                "collection": settings.qdrant_collection,
+                "collection": collection_name,
                 "dense_vector_name": settings.qdrant_dense_vector_name,
                 "expected_dim": settings.embedding_dim,
                 "actual_dim": actual_size,
@@ -60,7 +76,7 @@ def _validate_v1_hybrid_collection(info, settings: Settings) -> None:
             "Existing Qdrant collection is missing the configured BM25 sparse vector.",
             status_code=500,
             details={
-                "collection": settings.qdrant_collection,
+                "collection": collection_name,
                 "sparse_vector_name": settings.qdrant_sparse_vector_name,
             },
         )
@@ -72,7 +88,7 @@ def _validate_v1_hybrid_collection(info, settings: Settings) -> None:
             "Existing Qdrant collection BM25 sparse vector must use the IDF modifier.",
             status_code=500,
             details={
-                "collection": settings.qdrant_collection,
+                "collection": collection_name,
                 "sparse_vector_name": settings.qdrant_sparse_vector_name,
                 "expected_modifier": models.Modifier.IDF.value,
                 "actual_modifier": getattr(modifier, "value", modifier),

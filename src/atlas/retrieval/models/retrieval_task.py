@@ -7,9 +7,6 @@ from atlas.core.ids import new_id
 from atlas.query_orchestrator.schema import QueryPlan, RetrievalUnit
 
 
-NON_EXECUTABLE_PROVIDER_NAMES = frozenset({"sql"})
-
-
 @dataclass(frozen=True)
 class RetrievalTask:
     task_id: str
@@ -70,6 +67,7 @@ class RetrievalTask:
             internal_lanes=internal_lanes,
             metadata={
                 **metadata,
+                "purpose": unit.purpose,
                 "legacy_retrievers": list(getattr(unit, "retrievers", ()) or ()),
             },
         )
@@ -165,7 +163,7 @@ def _provider_status(
     provider: str,
     executable_providers: tuple[str, ...],
 ) -> str:
-    if provider in NON_EXECUTABLE_PROVIDER_NAMES or provider not in executable_providers:
+    if provider not in executable_providers:
         return "skipped_non_executable"
     value = getattr(unit, "provider_status", None) or metadata.get("provider_status")
     if value:
@@ -181,7 +179,7 @@ def _unsupported_reason(
     provider_status: str,
     executable_providers: tuple[str, ...],
 ) -> str | None:
-    if provider in NON_EXECUTABLE_PROVIDER_NAMES or provider not in executable_providers:
+    if provider not in executable_providers:
         return f"provider_not_executable:{provider}"
     value = getattr(unit, "unsupported_reason", None) or metadata.get("unsupported_reason")
     if value:

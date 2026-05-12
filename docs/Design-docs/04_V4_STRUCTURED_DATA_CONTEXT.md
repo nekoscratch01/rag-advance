@@ -2,6 +2,7 @@
 
 > 核心目标：让 Atlas 能处理结构化表格、SQL 查询、数值计算和可追溯的表格证据。
 > 关键边界：V4 是 SQLProvider / TableProvider，不让 LLM 自己猜数字或裸算复杂公式；SQL 结果也必须转成 EvidenceBlock。
+> 当前实现：Phase 1 是 contract / ingestion proof；SQLProvider V1 受控单表 Text-to-SQL 最小闭环已接入，但默认关闭，不声明多表/复杂公式/cell citation 或生成式答案可靠性已完成。
 
 ---
 
@@ -148,6 +149,15 @@ V4:
 ---
 
 ## 5. 数据模型
+
+当前 Phase 1 已落地的 contract/proof 包含：
+
+```text
+- SourceLocator 支持 precision / confidence / method / exact 标记，以及 storage locator。
+- stable_id / content_hash 用于稳定身份和内容校验。
+- canonical ParentChunk / ChildChunk / SchemaRoutingCard / TableCard / ColumnCard / ProfileCard。
+- StructuredArtifact envelope 保留 source locator、provenance policy、schema routing card、artifact manifest。
+```
 
 ### 5.1 TableAsset
 
@@ -595,6 +605,40 @@ citation_support_rate
 ---
 
 ## 15. Implementation Plan
+
+### V4 Phase 1 Ingestion Profile
+
+当前 Phase 1 是 contract / proof，已接入显式 opt-in 的 V4 ingestion profile：
+
+```text
+默认 ingestion profile:
+  PDF / Markdown / TXT 行为保持不变。
+  CSV / XLSX / HTML / HTM 仍返回 unsupported file type。
+
+V4 ingestion profile:
+  只在调用方显式传入 ingestion_profile=v4，
+  或在当前 /documents/ingest 形态下显式传入 metadata.atlas_ingestion_profile=v4 时启用。
+  允许 CSV / XLSX / HTML / HTM 通过 profile gate 进入 ingestion。
+  tabular source 不作为普通 TextChunk 发往主文本索引，也不写 legacy raw-row ParentBlock。
+  V4 profile 的 indexable chunks 使用独立 v4_qdrant_collection，并保留 metadata namespace。
+  duplicate skip 按 ingestion profile 隔离，默认 profile 与 V4 profile 不互相吞。
+  service 已接入 StructuredArtifactWriter，raw_artifacts 写完整 StructuredArtifact envelope。
+  manifest 可审计；schema_routing_card 不物化为 table_asset。
+  schema version 冲突或 unsupported 会 fail-fast；partial failure 不 silent pass。
+  service 在 structured artifact 写入后若后续失败，会把 manifest 标记为 orphaned。
+```
+
+本阶段边界：
+
+```text
+SQLProvider V1 只是受控单表 Text-to-SQL proof，默认关闭。
+不声明完整 Text-to-SQL 质量。
+不实现 calculator / formula runtime。
+不声明多表 DuckDB query capability；DuckDB 仍是受控 derived index / structured query 层。
+CSV / XLSX / HTML / HTM 只作为 V4 profile 下的 ingestion 输入，不等于结构化数值问答已可用。
+tabular profile intake 不产生可用于答案的 raw row TextChunk。
+Excel/PDF advanced adapter 不是 Phase 1 完成能力。
+```
 
 ### V4.0 Structured Contract
 

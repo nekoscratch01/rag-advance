@@ -276,6 +276,27 @@ def test_graph_unit_stays_ready_when_explicitly_executable_but_sql_is_not() -> N
     assert tasks[1].lanes == ()
 
 
+def test_sql_unit_is_ready_when_runtime_explicitly_enables_sql() -> None:
+    plan = QueryPlan(
+        plan_id="plan_sql_ready",
+        original_query="How many rows are in the revenue table?",
+        retrieval_units=(
+            RetrievalUnit(
+                unit_id="u_sql",
+                purpose="structured_lookup",
+                text="How many rows are in the revenue table?",
+                provider="sql",
+            ),
+        ),
+    )
+
+    task = tasks_from_plan(plan, executable_providers=("hybrid", "sql", "graph"))[0]
+
+    assert task.provider == "sql"
+    assert task.provider_status == "ready"
+    assert task.unsupported_reason is None
+
+
 def test_graph_unit_skips_when_runtime_is_hybrid_only() -> None:
     plan = QueryPlan(
         plan_id="plan_graph_hybrid_only",

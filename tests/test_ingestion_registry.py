@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from types import SimpleNamespace
 
 import pytest
@@ -169,6 +170,7 @@ def test_ingestion_service_public_flow_prepares_indexer_and_records_summary(
     )
 
     assert fake_indexer.prepared is True
+    assert fake_indexer.indexed
     assert [item.status for item in result.documents] == ["ingested"]
     assert fake_db.commits >= 2
     run = next(item for item in fake_db.added if isinstance(item, IngestionRun))
@@ -265,6 +267,109 @@ def test_duplicate_document_skips_vector_indexing(monkeypatch, tmp_path) -> None
     assert fake_indexer.indexed == []
 
 
+def test_duplicate_check_allows_same_content_across_profiles(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "sample.md"
+    path.write_text("# Title\n\nBody text.", encoding="utf-8")
+    raw_hash = hashlib.sha256(path.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+    existing_default = Document(
+        document_id="doc_existing_default",
+        title="Title",
+        source_uri=f"local:{path}",
+        file_type="markdown",
+        content_hash=raw_hash,
+        language="en",
+        metadata_json={"path": str(path)},
+    )
+
+    monkeypatch.setattr(
+        "atlas.db.repositories.get_document_by_hash",
+        lambda db, content_hash: existing_default if content_hash == raw_hash else None,
+    )
+    fake_indexer = _FakeVectorIndexer()
+    fake_db = _FakeDB()
+    service = IngestionService(
+        settings=Settings(openai_api_key=None, document_roots=str(tmp_path)),
+        embedder=_FakeEmbedder(),
+        qdrant=object(),
+        vector_indexer=fake_indexer,
+    )
+
+    summary = service._ingest_one_path(
+        fake_db,
+        path=str(path),
+        source_uri=None,
+        metadata={},
+        ingestion_profile="v4",
+    )
+
+    documents = [item for item in fake_db.added if isinstance(item, Document)]
+    assert summary.status == "ingested"
+    assert fake_indexer.indexed
+    assert len(documents) == 1
+    assert documents[0].document_id != existing_default.document_id
+    assert documents[0].content_hash != raw_hash
+    assert documents[0].metadata_json["atlas_ingestion_profile"] == "v4"
+
+
+def test_duplicate_check_skips_same_v4_profile(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "sample.md"
+    path.write_text("# Title\n\nBody text.", encoding="utf-8")
+    existing_v4 = Document(
+        document_id="doc_existing_v4",
+        title="Title",
+        source_uri=f"local:{path}",
+        file_type="markdown",
+        content_hash="profile-scoped-hash",
+        language="en",
+        metadata_json={"atlas_ingestion_profile": "v4"},
+    )
+    existing_chunks = [
+        Chunk(
+            chunk_id="chk_existing_v4",
+            document_id="doc_existing_v4",
+            parent_id=None,
+            chunk_index=0,
+            text="Body text.",
+            text_hash="hash",
+            section_title=None,
+            page_start=None,
+            page_end=None,
+            token_count=2,
+            embedding_model="fake-embedder",
+            embedding_dim=3,
+            metadata_json={"atlas_ingestion_profile": "v4"},
+        )
+    ]
+    monkeypatch.setattr(
+        "atlas.db.repositories.get_document_by_hash",
+        lambda db, content_hash: existing_v4,
+    )
+    monkeypatch.setattr(
+        "atlas.db.repositories.get_chunks_for_document",
+        lambda db, document_id: existing_chunks,
+    )
+    fake_indexer = _FakeVectorIndexer()
+    service = IngestionService(
+        settings=Settings(openai_api_key=None, document_roots=str(tmp_path)),
+        embedder=_FakeEmbedder(),
+        qdrant=object(),
+        vector_indexer=fake_indexer,
+    )
+
+    summary = service._ingest_one_path(
+        _FakeDB(),
+        path=str(path),
+        source_uri=None,
+        metadata={},
+        ingestion_profile="v4",
+    )
+
+    assert summary.status == "skipped_duplicate"
+    assert summary.document_id == "doc_existing_v4"
+    assert summary.chunk_count == 1
+    assert fake_indexer.indexed == []
+
+
 def test_ingestion_cleans_up_when_vector_indexer_fails(monkeypatch, tmp_path) -> None:
     path = tmp_path / "sample.md"
     path.write_text("# Title\n\nBody text.", encoding="utf-8")
@@ -344,3 +449,68 @@ def test_qdrant_vector_indexer_requires_injected_sparse_encoder_when_bm25_enable
             ],
             embeddings=[[1.0, 0.0, 0.0]],
         )
+
+
+def test_qdrant_vector_indexer_routes_v4_chunks_to_v4_collection() -> None:
+    class _SpyQdrant:
+        def __init__(self) -> None:
+            self.collections = set()
+            self.created = []
+            self.upserts = []
+            self.deletes = []
+
+        def collection_exists(self, collection_name: str) -> bool:
+            return collection_name in self.collections
+
+        def create_collection(self, **kwargs) -> None:
+            self.created.append(kwargs["collection_name"])
+            self.collections.add(kwargs["collection_name"])
+
+        def upsert(self, **kwargs) -> None:
+            self.upserts.append(kwargs)
+
+        def delete(self, **kwargs) -> None:
+            self.deletes.append(kwargs)
+
+    qdrant = _SpyQdrant()
+    settings = Settings(
+        openai_api_key=None,
+        bm25_enabled=False,
+        retrieval_mode="dense",
+        embedding_dim=3,
+        qdrant_collection="atlas_default_test",
+        v4_qdrant_collection="atlas_v4_test",
+    )
+    indexer = QdrantVectorIndexer(settings=settings, qdrant=qdrant)
+    document = Document(
+        document_id="doc_v4",
+        title="V4",
+        source_uri="local:v4.md",
+        file_type="markdown",
+        content_hash="hash_v4",
+        language="en",
+        metadata_json={"atlas_ingestion_profile": "v4"},
+    )
+    chunk = Chunk(
+        chunk_id="chk_v4",
+        document_id="doc_v4",
+        parent_id=None,
+        chunk_index=0,
+        text="V4 body text.",
+        text_hash="hash",
+        section_title=None,
+        page_start=None,
+        page_end=None,
+        token_count=3,
+        embedding_model="fake-embedder",
+        embedding_dim=3,
+        metadata_json={"atlas_ingestion_profile": "v4"},
+    )
+
+    indexer.index(document=document, chunks=[chunk], embeddings=[[1.0, 0.0, 0.0]])
+    indexer.cleanup([chunk])
+
+    assert qdrant.created == ["atlas_v4_test"]
+    assert [item["collection_name"] for item in qdrant.upserts] == ["atlas_v4_test"]
+    assert [item["collection_name"] for item in qdrant.deletes] == ["atlas_v4_test"]
+    assert "atlas_default_test" not in [item["collection_name"] for item in qdrant.upserts]

@@ -463,6 +463,389 @@ class GraphCommunity(Base):
     )
 
 
+class StructuredArtifactRecord(Base):
+    __tablename__ = "structured_artifacts"
+    __table_args__ = (
+        CheckConstraint(
+            "materialization_policy in ('none', 'facts', 'full')",
+            name="ck_structured_artifacts_materialization_policy",
+        ),
+        Index("ix_structured_artifacts_document_id", "document_id"),
+        Index("ix_structured_artifacts_ingestion_run_id", "ingestion_run_id"),
+        Index("ix_structured_artifacts_schema_version", "schema_version"),
+        Index("ix_structured_artifacts_status", "status"),
+    )
+
+    artifact_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ingestion_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    materialization_policy: Mapped[str] = mapped_column(
+        String(16),
+        default="facts",
+        server_default=text("'facts'"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default="completed",
+        server_default=text("'completed'"),
+        nullable=False,
+    )
+    artifact_root_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    manifest_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_artifacts_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    artifact_counts_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    materialized_counts_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    warnings_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    errors_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class TableAsset(Base):
+    __tablename__ = "table_assets"
+    __table_args__ = (
+        Index("ix_table_assets_artifact_id", "artifact_id"),
+        Index("ix_table_assets_document_id", "document_id"),
+        Index("ix_table_assets_page_range", "document_id", "page_start", "page_end"),
+        Index("ix_table_assets_source_type", "source_type"),
+    )
+
+    table_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    artifact_id: Mapped[str | None] = mapped_column(
+        ForeignKey(
+            "structured_artifacts.artifact_id",
+            name="fk_table_assets_artifact",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    table_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_type: Mapped[str] = mapped_column(
+        String(64),
+        default="unknown",
+        server_default=text("'unknown'"),
+        nullable=False,
+    )
+    extraction_method: Mapped[str] = mapped_column(
+        String(128),
+        default="unknown",
+        server_default=text("'unknown'"),
+        nullable=False,
+    )
+    extraction_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    column_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class TableColumn(Base):
+    __tablename__ = "table_columns"
+    __table_args__ = (
+        UniqueConstraint("table_id", "column_index", name="uq_table_columns_table_index"),
+        Index("ix_table_columns_table_id", "table_id"),
+        Index("ix_table_columns_canonical_name", "canonical_name"),
+        Index("ix_table_columns_period", "period"),
+    )
+
+    column_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    table_id: Mapped[str] = mapped_column(
+        ForeignKey("table_assets.table_id", name="fk_table_columns_table", ondelete="CASCADE"),
+        nullable=False,
+    )
+    column_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    canonical_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    data_type: Mapped[str] = mapped_column(
+        String(64),
+        default="unknown",
+        server_default=text("'unknown'"),
+        nullable=False,
+    )
+    unit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    period: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class TableProfile(Base):
+    __tablename__ = "table_profiles"
+    __table_args__ = (
+        Index("ix_table_profiles_artifact_id", "artifact_id"),
+        Index("ix_table_profiles_document_id", "document_id"),
+    )
+
+    table_id: Mapped[str] = mapped_column(
+        ForeignKey("table_assets.table_id", name="fk_table_profiles_table", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
+    artifact_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    column_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    numeric_column_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    empty_cell_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    profile_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    warnings_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    errors_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class TableRow(Base):
+    __tablename__ = "table_rows"
+    __table_args__ = (
+        UniqueConstraint("table_id", "row_index", name="uq_table_rows_table_index"),
+        Index("ix_table_rows_table_id", "table_id"),
+        Index("ix_table_rows_canonical_metric", "canonical_metric"),
+    )
+
+    row_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    table_id: Mapped[str] = mapped_column(
+        ForeignKey("table_assets.table_id", name="fk_table_rows_table", ondelete="CASCADE"),
+        nullable=False,
+    )
+    row_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    row_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    canonical_metric: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class TableCell(Base):
+    __tablename__ = "table_cells"
+    __table_args__ = (
+        Index("ix_table_cells_table_id", "table_id"),
+        Index("ix_table_cells_row_id", "row_id"),
+        Index("ix_table_cells_column_id", "column_id"),
+        Index("ix_table_cells_page_number", "page_number"),
+    )
+
+    cell_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    table_id: Mapped[str] = mapped_column(
+        ForeignKey("table_assets.table_id", name="fk_table_cells_table", ondelete="CASCADE"),
+        nullable=False,
+    )
+    row_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    column_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    row_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    column_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    raw_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    normalized_value_json: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
+    numeric_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bbox_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provenance_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class FinancialFact(Base):
+    __tablename__ = "financial_facts"
+    __table_args__ = (
+        Index("ix_financial_facts_artifact_id", "artifact_id"),
+        Index("ix_financial_facts_company", "company"),
+        Index("ix_financial_facts_metric", "metric"),
+        Index("ix_financial_facts_company_metric_year", "company", "metric", "fiscal_year"),
+        Index("ix_financial_facts_source_table_id", "source_table_id"),
+        Index("ix_financial_facts_source_document_id", "source_document_id"),
+    )
+
+    fact_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    artifact_id: Mapped[str | None] = mapped_column(
+        ForeignKey(
+            "structured_artifacts.artifact_id",
+            name="fk_financial_facts_artifact",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    company: Mapped[str] = mapped_column(String(512), nullable=False)
+    company_norm: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    fiscal_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fiscal_period: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    metric: Mapped[str] = mapped_column(String(256), nullable=False)
+    metric_norm: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    raw_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    scale: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    source_document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_table_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    source_cell_ids_json: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class FinancialFactCell(Base):
+    __tablename__ = "financial_fact_cells"
+    __table_args__ = (
+        PrimaryKeyConstraint("fact_id", "cell_id", name="pk_financial_fact_cells"),
+        ForeignKeyConstraint(
+            ["fact_id"],
+            ["financial_facts.fact_id"],
+            name="fk_financial_fact_cells_fact",
+            ondelete="CASCADE",
+        ),
+        Index("ix_financial_fact_cells_fact_id", "fact_id"),
+        Index("ix_financial_fact_cells_cell_id", "cell_id"),
+        Index("ix_financial_fact_cells_table_id", "table_id"),
+    )
+
+    fact_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    cell_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    table_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    row_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    column_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bbox_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    provenance_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        server_default=text("now()"),
+        nullable=False,
+    )
+
+
 class IngestionRun(Base):
     __tablename__ = "ingestion_runs"
 
